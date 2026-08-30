@@ -5,8 +5,10 @@ edition = "2021"
 description = "JSON-lines sidecar that drives an Azalea (Rust) Minecraft client for MC Bot Manager"
 
 [dependencies]
-azalea = { version = "0.16.0", default-features = true }
-azalea-auth = "0.16.0"
+# Use latest git main which has fixes for newer Rust nightly (FixedBitSet E0284)
+# Previously pinned to 0.16.0 which broke with nightly 2025+
+azalea = { git = "https://github.com/azalea-rs/azalea", branch = "main", default-features = true }
+azalea-auth = { git = "https://github.com/azalea-rs/azalea", branch = "main" }
 eyre = "0.6"
 parking_lot = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
