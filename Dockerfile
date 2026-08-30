@@ -6,14 +6,19 @@ COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || echo "Prefetch failed"
 COPY azalea-bridge/src ./src
 RUN touch src/main.rs && \
-    (cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS") || \
-    (echo ">> Trying nightly-2024-08-01..." && rustup toolchain install nightly-2024-08-01 --no-self-update && rustup override set nightly-2024-08-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> Trying nightly-2024-06-01..." && rustup toolchain install nightly-2024-06-01 --no-self-update && rustup override set nightly-2024-06-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> Trying nightly-2024-02-01..." && rustup toolchain install nightly-2024-02-01 --no-self-update && rustup override set nightly-2024-02-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> Trying nightly-2024-01-01..." && rustup toolchain install nightly-2024-01-01 --no-self-update && rustup override set nightly-2024-01-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> Trying nightly-2023-12-01..." && rustup toolchain install nightly-2023-12-01 --no-self-update && rustup override set nightly-2023-12-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> Trying stable..." && rustup toolchain install stable --no-self-update && rustup override set stable && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge) || \
-    (echo ">> WARNING: All Rust failed, dummy" && echo '#!/bin/sh' > /azalea-bridge && echo 'echo "{\"ev\":\"error\",\"line\":\"Azalea not available\"}"' >> /azalea-bridge && chmod +x /azalea-bridge)
+    echo ">> Trying with pinned toolchain $(rustc --version)" && \
+    (cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS pinned") || \
+    (echo ">> Trying nightly-2024-08-01..." && rustup toolchain install nightly-2024-08-01 --no-self-update && rustup override set nightly-2024-08-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-08-01") || \
+    (echo ">> Trying nightly-2024-06-01..." && rustup toolchain install nightly-2024-06-01 --no-self-update && rustup override set nightly-2024-06-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-06-01") || \
+    (echo ">> Trying nightly-2024-02-01..." && rustup toolchain install nightly-2024-02-01 --no-self-update && rustup override set nightly-2024-02-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-02-01") || \
+    (echo ">> Trying nightly-2024-01-01..." && rustup toolchain install nightly-2024-01-01 --no-self-update && rustup override set nightly-2024-01-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-01-01") || \
+    (echo ">> Trying nightly-2023-12-01..." && rustup toolchain install nightly-2023-12-01 --no-self-update && rustup override set nightly-2023-12-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2023-12-01") || \
+    (echo ">> Trying nightly-2023-10-01..." && rustup toolchain install nightly-2023-10-01 --no-self-update && rustup override set nightly-2023-10-01 && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2023-10-01") || \
+    (echo ">> Trying stable..." && rustup toolchain install stable --no-self-update && rustup override set stable && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS stable") || \
+    (echo ">> Trying azalea git main with latest nightly..." && rustup override set nightly && \
+     printf '[package]\nname = "azalea-bridge"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\nazalea = { git = "https://github.com/azalea-rs/azalea", branch = "main", default-features = true }\neyre = "0.6"\nparking_lot = "0.12"\nserde = { version = "1", features = ["derive"] }\nserde_json = "1"\ntokio = { version = "1", features = ["full"] }\ntracing = "0.1"\ntracing-subscriber = { version = "0.3", features = ["env-filter"] }\nuuid = { version = "1", features = ["serde"] }\n[profile.release]\nlto = false\ncodegen-units = 8\nopt-level = 3\n' > Cargo.toml && \
+     cp src/main_latest.rs src/main.rs && cargo clean && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS git main") || \
+    (echo ">> WARNING: All Rust failed, creating dummy" && echo '#!/bin/sh' > /azalea-bridge && echo 'echo "{\"ev\":\"error\",\"line\":\"Azalea not available - Rust build failed\"}"' >> /azalea-bridge && chmod +x /azalea-bridge)
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
