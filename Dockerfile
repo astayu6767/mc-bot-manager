@@ -1,18 +1,14 @@
 # syntax=docker/dockerfile:1
-# Fix: rust:bookworm + nightly-2024-02-01, no fixedbitset patch (old nightly doesn't need it)
-# CACHEBUST 2024-02-01-fix-3
+# Use git main branch of azalea - it supports edition2024 AND has E0284 fix
+# Use latest nightly which supports edition2024
 
 FROM rust:bookworm AS azalea
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    CARGO_BUILD_JOBS=2 \
-    CARGO_INCREMENTAL=0
+    CARGO_BUILD_JOBS=2
 
-RUN rustup toolchain install nightly-2024-02-01 --no-self-update && \
-    rustup default nightly-2024-02-01 && \
-    rustup override set nightly-2024-02-01 && \
-    rustc --version
+RUN rustc --version && cargo --version
 
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
 
@@ -21,7 +17,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || t
 COPY azalea-bridge/src ./src
 
 RUN touch src/main.rs && \
-    echo ">> Building Azalea with $(rustc --version)" && \
+    echo ">> Building Azalea git main with $(rustc --version)" && \
     cargo build --release && \
     cp target/release/azalea-bridge /azalea-bridge && \
     echo ">> SUCCESS - real binary built" && \
