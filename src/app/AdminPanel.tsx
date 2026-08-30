@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import BotDetailView from "./BotDetailView";
+import { BotItem } from "./types";
 
 type AdminUser = {
   id: string;
@@ -22,6 +24,8 @@ type AdminBot = {
   host: string;
   port: number;
   status: string;
+  version: string;
+  engine: string;
 };
 
 type LicenseKeyInfo = {
@@ -61,6 +65,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [bots, setBots] = useState<AdminBot[]>([]);
   const [busy, setBusy] = useState(false);
+  const [adminViewBot, setAdminViewBot] = useState<BotItem | null>(null);
 
   // License keys
   const [licenseKeys, setLicenseKeys] = useState<LicenseKeyInfo[]>([]);
@@ -122,6 +127,70 @@ export default function AdminPanel({ meId }: { meId: string }) {
     if (res.ok) {
       const data = await res.json();
       setBots(data.bots ?? []);
+    }
+  }
+
+  async function viewBotConsole(botId: string) {
+    // Fetch full bot data for BotDetailView
+    try {
+      const res = await fetch(`/api/bots/${botId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        // data is single bot? Check API shape
+        const bot = data.bot || data;
+        // Need to map to BotItem - use minimal fields, BotDetailView will poll console itself
+        setAdminViewBot({
+          id: bot.id,
+          name: bot.name,
+          username: bot.username,
+          host: bot.host,
+          port: bot.port,
+          version: bot.version || "auto",
+          proxy: bot.proxy || "",
+          ytChannel: bot.ytChannel || "Alight.z",
+          beamIp: bot.beamIp || "badlion-pvp.xyz",
+          discordUser: bot.discordUser || "stood014",
+          engine: bot.engine || "azalea",
+          beamType: bot.beamType || "ai",
+          spamMessage: bot.spamMessage || "",
+          spamInterval: bot.spamInterval || 60000,
+          spamTriggerWord: bot.spamTriggerWord || "",
+          spamReplyMessage: bot.spamReplyMessage || "",
+          status: bot.status || "offline",
+          joined: false,
+          lastError: bot.lastError || null,
+          createdAt: bot.createdAt,
+        } as BotItem);
+      } else {
+        // fallback: construct from list
+        const b = bots.find((x) => x.id === botId);
+        if (b) {
+          setAdminViewBot({
+            id: b.id,
+            name: b.name,
+            username: b.username,
+            host: b.host,
+            port: b.port,
+            version: b.version,
+            proxy: "",
+            ytChannel: "Alight.z",
+            beamIp: "badlion-pvp.xyz",
+            discordUser: "stood014",
+            engine: b.engine,
+            beamType: "ai",
+            spamMessage: "",
+            spamInterval: 60000,
+            spamTriggerWord: "",
+            spamReplyMessage: "",
+            status: b.status as any,
+            joined: false,
+            lastError: null,
+            createdAt: new Date().toISOString(),
+          } as BotItem);
+        }
+      }
+    } catch {
+      alert("Failed to load bot");
     }
   }
 
@@ -280,6 +349,24 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
   const activeKeys = licenseKeys.filter((k) => k.active && !k.redeemed);
   const redeemedKeys = licenseKeys.filter((k) => k.redeemed);
+
+  // If admin is viewing a bot console
+  if (adminViewBot) {
+    return (
+      <div>
+        <button
+          onClick={() => setAdminViewBot(null)}
+          className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+        >
+          ← Back to Admin
+        </button>
+        <div className="mb-3 rounded-xl bg-fuchsia-500/10 px-3 py-2 text-xs text-fuchsia-300 ring-1 ring-fuchsia-500/20">
+          Admin view - managing bot of another user: {adminViewBot.name} ({adminViewBot.host}:{adminViewBot.port})
+        </div>
+        <BotDetailView bot={adminViewBot} onChanged={() => {}} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -444,47 +531,69 @@ export default function AdminPanel({ meId }: { meId: string }) {
               </div>
 
               {expanded === u.id && (
-                <div className="mt-3 border-t border-slate-800 pt-3">
+                <div className="mt-4 border-t border-slate-800 pt-4">
                   {bots.length === 0 ? (
                     <p className="text-xs text-slate-500">No bots.</p>
                   ) : (
-                    <ul className="space-y-2">
+                    <ul className="space-y-2.5">
                       {bots.map((b) => (
                         <li
                           key={b.id}
-                          className="flex items-center justify-between gap-2 rounded-lg bg-slate-950/40 px-3 py-2 text-xs"
+                          className="group flex items-center justify-between gap-3 rounded-xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs transition hover:border-slate-700 hover:bg-slate-900/80"
                         >
-                          <span className="flex items-center gap-2 truncate">
+                          <div className="flex min-w-0 items-center gap-3">
                             <span
-                              className={`h-2 w-2 rounded-full ${
+                              className={`h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_8px] ${
                                 b.status === "online"
-                                  ? "bg-emerald-400"
+                                  ? "bg-emerald-400 shadow-emerald-400/30"
                                   : b.status === "connecting"
-                                    ? "bg-amber-400"
+                                    ? "bg-amber-400 shadow-amber-400/30 animate-pulse"
                                     : b.status === "error"
-                                      ? "bg-rose-500"
+                                      ? "bg-rose-500 shadow-rose-500/30"
                                       : "bg-slate-500"
                               }`}
                             />
-                            <span className="font-medium text-slate-200">
-                              {b.name}
-                            </span>
-                            <span className="text-slate-500">
-                              {b.host}:{b.port}
-                            </span>
-                            {b.username && (
-                              <span className="text-slate-500">
-                                · {b.username}
-                              </span>
-                            )}
-                          </span>
-                          <button
-                            disabled={busy}
-                            onClick={() => removeBot(b.id, u.id)}
-                            className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-40"
-                          >
-                            Remove
-                          </button>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate font-semibold text-slate-100">
+                                  {b.name}
+                                </span>
+                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                  b.engine === "azalea" ? "bg-orange-500/15 text-orange-300" : "bg-slate-700/50 text-slate-400"
+                                }`}>
+                                  {b.engine}
+                                </span>
+                                <span className="hidden sm:inline text-[11px] text-slate-500">
+                                  {b.host}:{b.port}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                                {b.username && <span className="text-slate-400">{b.username}</span>}
+                                <span className="text-slate-600">·</span>
+                                <span className={`font-medium ${
+                                  b.status === "online" ? "text-emerald-400" : b.status === "error" ? "text-rose-400" : "text-slate-500"
+                                }`}>
+                                  {b.status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              onClick={() => viewBotConsole(b.id)}
+                              className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20 transition hover:bg-emerald-500/20"
+                              title="View console & settings as admin"
+                            >
+                              Console
+                            </button>
+                            <button
+                              disabled={busy}
+                              onClick={() => removeBot(b.id, u.id)}
+                              className="rounded-lg border border-slate-700 bg-slate-800/50 px-2.5 py-1.5 text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-40"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -496,130 +605,184 @@ export default function AdminPanel({ meId }: { meId: string }) {
         )}
       </div>
 
-      {/* License Management - right below users */}
-      <div className="mt-8">
-        <div className="flex items-center gap-3">
-          <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-lg">
-            🎫
-          </div>
-          <div>
-            <h3 className="text-base font-semibold tracking-tight">License Keys</h3>
-            <p className="text-xs text-slate-400">Generate redeemable keys like abeam-key-xxxx - user redeems in License tab</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <StatCard label="Active Keys" value={activeKeys.length} accent="text-emerald-300" />
-          <StatCard label="Redeemed" value={redeemedKeys.length} accent="text-amber-300" />
-          <StatCard label="Total Slots Given" value={licenses.filter(l=>l.active).reduce((a,l)=>a+l.slots,0)} accent="text-sky-300" />
-        </div>
-
-        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <h4 className="text-sm font-semibold text-slate-200">Generate New License Key</h4>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-slate-400">Slots</label>
-              <input
-                type="number"
-                min={1}
-                value={slots}
-                onChange={(e) => setSlots(Number(e.target.value))}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-amber-500/60"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Reason / Note</label>
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Weekly plan, VIP"
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-amber-500/60"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Days</label>
-              <input
-                type="number"
-                min={0}
-                value={days}
-                onChange={(e) => setDays(Number(e.target.value))}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-amber-500/60"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Hours</label>
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={hours}
-                onChange={(e) => setHours(Number(e.target.value))}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-amber-500/60"
-              />
-              <p className="mt-1 text-[11px] text-slate-500">{days}d {hours}h = {days*24+hours}h</p>
-            </div>
-          </div>
-
-          {lastGeneratedKey && (
-            <div className="mt-4 rounded-xl bg-emerald-500/10 p-3 ring-1 ring-emerald-500/20">
-              <p className="text-xs font-medium text-emerald-300">Last generated key:</p>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 rounded-lg bg-slate-950 px-3 py-2 text-sm font-mono text-amber-300">{lastGeneratedKey}</code>
-                <button
-                  onClick={() => navigator.clipboard.writeText(lastGeneratedKey)}
-                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"
-                >
-                  Copy
-                </button>
+      {/* License Management - premium UI */}
+      <div className="mt-10">
+        <div className="relative overflow-hidden rounded-[20px] border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] via-orange-500/[0.05] to-slate-900/60 p-[1px]">
+          <div className="rounded-[19px] bg-slate-900/90 backdrop-blur">
+            <div className="flex items-center gap-3 px-6 py-5">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-xl shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+                🎫
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[15px] font-bold tracking-tight text-white">License Keys</h3>
+                <p className="text-xs text-slate-400">Generate redeemable keys like abeam-key-xxxx-xxxx - user redeems in License tab</p>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-300 ring-1 ring-amber-500/20">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                {activeKeys.length} active
               </div>
             </div>
-          )}
 
-          <button
-            disabled={busy}
-            onClick={createLicenseKey}
-            className="mt-4 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-900/30 transition hover:from-amber-400 hover:to-orange-500 disabled:opacity-50"
-          >
-            {busy ? "Generating..." : `Generate Key - ${slots} slots for ${days}d ${hours}h`}
-          </button>
-        </div>
+            <div className="grid grid-cols-3 gap-px border-y border-slate-800/60 bg-slate-800/60">
+              <div className="bg-slate-900/60 px-5 py-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-emerald-300">{activeKeys.length}</span>
+                  <span className="text-xs text-slate-500">keys</span>
+                </div>
+                <div className="mt-1 text-[11px] font-medium uppercase tracking-widest text-slate-500">Active Keys</div>
+              </div>
+              <div className="bg-slate-900/60 px-5 py-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-amber-300">{redeemedKeys.length}</span>
+                  <span className="text-xs text-slate-500">keys</span>
+                </div>
+                <div className="mt-1 text-[11px] font-medium uppercase tracking-widest text-slate-500">Redeemed</div>
+              </div>
+              <div className="bg-slate-900/60 px-5 py-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-sky-300">{licenses.filter(l=>l.active && !l.isExpired).reduce((a,l)=>a+l.slots,0)}</span>
+                  <span className="text-xs text-slate-500">slots</span>
+                </div>
+                <div className="mt-1 text-[11px] font-medium uppercase tracking-widest text-slate-500">Total Slots Given</div>
+              </div>
+            </div>
 
-        <div className="mt-6">
-          <h4 className="text-sm font-semibold text-slate-200">Active Redeemable Keys</h4>
-          {activeKeys.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">No active keys</p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {activeKeys.map((k) => (
-                <div key={k.id} className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                  <div className="min-w-0 flex-1">
+            <div className="p-6">
+              <h4 className="text-sm font-semibold text-white">Generate New License Key</h4>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div className="group">
+                  <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 group-focus-within:text-amber-300">Slots</label>
+                  <div className="mt-2 relative">
+                    <input
+                      type="number"
+                      min={1}
+                      value={slots}
+                      onChange={(e) => setSlots(Number(e.target.value))}
+                      className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-4 py-3 text-sm font-medium text-white outline-none transition focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-500">bots</div>
+                  </div>
+                </div>
+                <div className="group">
+                  <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 group-focus-within:text-amber-300">Reason / Note</label>
+                  <input
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="e.g. Weekly plan, VIP, Lifetime"
+                    className="mt-2 w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-4 py-3 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+                <div className="group">
+                  <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 group-focus-within:text-amber-300">Days</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={days}
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    className="mt-2 w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-4 py-3 text-sm font-medium text-white outline-none transition focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+                <div className="group">
+                  <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 group-focus-within:text-amber-300">Hours</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={hours}
+                    onChange={(e) => setHours(Number(e.target.value))}
+                    className="mt-2 w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-4 py-3 text-sm font-medium text-white outline-none transition focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20"
+                  />
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <span className="h-1 w-1 rounded-full bg-amber-400/60" />
+                    {days}d {hours}h = {days*24+hours}h total
+                  </div>
+                </div>
+              </div>
+
+              {lastGeneratedKey && (
+                <div className="mt-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-[1px] ring-1 ring-emerald-500/20">
+                  <div className="rounded-[15px] bg-slate-950/80 p-4">
                     <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      <code className="truncate text-xs font-mono font-semibold text-amber-300">{k.key}</code>
-                      <span className="text-xs text-slate-400">· {k.slots} slots · {k.durationDays}d {k.durationHours}h</span>
+                      <span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500/20 text-emerald-400">✓</span>
+                      <p className="text-xs font-semibold text-emerald-200">Generated successfully</p>
+                      <span className="ml-auto text-[10px] text-emerald-300/60">copy & share</span>
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      Created: {new Date(k.createdAt).toLocaleString()} {k.reason && <>· {k.reason}</>}
+                    <div className="mt-3 flex items-center gap-2">
+                      <code className="flex-1 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm font-mono font-semibold tracking-wide text-amber-300">{lastGeneratedKey}</code>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(lastGeneratedKey)}
+                        className="shrink-0 rounded-xl bg-slate-800 px-4 py-3 text-xs font-semibold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                      >
+                        Copy
+                      </button>
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                </div>
+              )}
+
+              <button
+                disabled={busy}
+                onClick={createLicenseKey}
+                className="mt-5 group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-orange-600 px-6 py-3.5 text-sm font-bold text-white shadow-[0_0_30px_rgba(245,158,11,0.25)] transition-all hover:shadow-[0_0_40px_rgba(245,158,11,0.35)] active:scale-[0.98] disabled:opacity-50"
+              >
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  <span>✨</span> Generate Key - {slots} slots for {days}d {hours}h
+                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 transition-opacity group-hover:opacity-100 group-hover:animate-[shimmer_1.5s_infinite]" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-bold text-white">Active Redeemable Keys</h4>
+            <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-400">{activeKeys.length}</span>
+          </div>
+          {activeKeys.length === 0 ? (
+            <div className="mt-3 grid place-items-center rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/30 py-12 text-center">
+              <div className="text-2xl opacity-50">🎫</div>
+              <p className="mt-2 text-xs text-slate-500">No active keys - generate one above</p>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-2.5">
+              {activeKeys.map((k) => (
+                <div key={k.id} className="group flex items-center justify-between rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 backdrop-blur transition hover:border-amber-500/30 hover:bg-slate-800/60">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+                      <code className="truncate rounded-lg bg-amber-500/10 px-2.5 py-1 text-xs font-mono font-bold tracking-wide text-amber-300 ring-1 ring-amber-500/20">{k.key}</code>
+                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-300">{k.slots} slots</span>
+                      <span className="text-[11px] text-slate-500">{k.durationDays}d {k.durationHours}h</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                      <span>{new Date(k.createdAt).toLocaleString()}</span>
+                      {k.reason && (
+                        <>
+                          <span className="h-1 w-1 rounded-full bg-slate-600" />
+                          <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400">{k.reason}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="ml-3 flex shrink-0 items-center gap-1">
                     <button
                       onClick={() => navigator.clipboard.writeText(k.key)}
-                      className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-slate-700 hover:text-white"
                     >
                       Copy
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => revokeLicenseKey(k.id, "key")}
-                      className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 disabled:opacity-40"
+                      className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-400 transition hover:bg-slate-800 disabled:opacity-40"
                     >
                       Revoke
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => deleteLicenseKey(k.id, "key")}
-                      className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-rose-400 hover:border-rose-500/40 disabled:opacity-40"
+                      className="rounded-lg border border-rose-900/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-medium text-rose-400 transition hover:bg-rose-500/20 disabled:opacity-40"
                     >
                       Delete
                     </button>
@@ -630,16 +793,16 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
 
           {redeemedKeys.length > 0 && (
-            <div className="mt-6">
-              <h4 className="text-sm font-semibold text-slate-500">Redeemed Keys</h4>
+            <div className="mt-8">
+              <h4 className="text-sm font-semibold text-slate-400">Redeemed Keys</h4>
               <div className="mt-3 space-y-2">
                 {redeemedKeys.map((k) => (
-                  <div key={k.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/40 p-3 opacity-70">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div key={k.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/30 p-3 opacity-60">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-slate-500" />
-                        <code className="text-xs font-mono text-slate-400">{k.key}</code>
-                        <span className="text-xs text-slate-500">· {k.slots} slots · redeemed by {k.redeemedByUsername || "unknown"}</span>
+                        <code className="truncate text-xs font-mono text-slate-500">{k.key}</code>
+                        <span className="text-xs text-slate-500">· {k.slots} slots · by {k.redeemedByUsername || "unknown"}</span>
                       </div>
                       <div className="mt-1 text-[11px] text-slate-600">
                         Redeemed: {k.redeemedAt ? new Date(k.redeemedAt).toLocaleString() : "unknown"}
@@ -648,7 +811,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                     <button
                       disabled={busy}
                       onClick={() => deleteLicenseKey(k.id, "key")}
-                      className="rounded-lg border border-slate-800 px-2 py-1 text-xs text-slate-500 hover:text-rose-400 disabled:opacity-40"
+                      className="rounded-lg border border-slate-800 px-2.5 py-1 text-xs text-slate-500 hover:text-rose-400 disabled:opacity-40"
                     >
                       Delete
                     </button>
@@ -659,33 +822,34 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
 
           {licenses.length > 0 && (
-            <div className="mt-6">
+            <div className="mt-8">
               <h4 className="text-sm font-semibold text-slate-400">Redeemed Licenses (active grants)</h4>
               <div className="mt-3 space-y-2">
-                {licenses.filter(l=>l.active && !l.isExpired).slice(0,10).map((lic) => (
+                {licenses.filter(l=>l.active && !l.isExpired).slice(0,12).map((lic) => (
                   <div key={lic.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/40 p-3">
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-emerald-400" />
                         <span className="text-xs font-semibold text-slate-300">{lic.username}</span>
                         <span className="text-xs text-slate-500">· {lic.slots} slots · {lic.timeLeft}</span>
                       </div>
-                      <div className="mt-1 text-[11px] text-slate-600">
-                        Key: {lic.licenseKey?.slice(0,20)}... · Expires: {new Date(lic.expiresAt).toLocaleString()}
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600">
+                        <code className="rounded bg-slate-800 px-1 py-0.5 font-mono text-amber-300/60">{lic.licenseKey?.slice(0,22)}...</code>
+                        <span>· Expires: {new Date(lic.expiresAt).toLocaleString()}</span>
                       </div>
                     </div>
                     <div className="flex gap-1">
                       <button
                         disabled={busy}
                         onClick={() => revokeLicenseKey(lic.id, "license")}
-                        className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 disabled:opacity-40"
+                        className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-400 hover:bg-slate-800 disabled:opacity-40"
                       >
                         Revoke
                       </button>
                       <button
                         disabled={busy}
                         onClick={() => deleteLicenseKey(lic.id, "license")}
-                        className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-rose-400 hover:border-rose-500/40 disabled:opacity-40"
+                        className="rounded-lg border border-rose-900/30 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-400 hover:bg-rose-500/20 disabled:opacity-40"
                       >
                         Delete
                       </button>

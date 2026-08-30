@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BotItem, BotStatus, LogEntry, HotbarItem, ViewSnapshot } from "./types";
 import { StatusBadge, BotAvatar } from "./BotDashboard";
 
-// Extract shared types into a new file or reuse them. For now, since they are needed here:
 export default function BotDetailView({
   bot,
   onChanged,
@@ -35,7 +34,6 @@ export default function BotDetailView({
       setStatus(data.status ?? "offline");
       setBeam(data.beam ?? { looping: false, stage: "" });
       if (tab === "console") {
-        // Filter noisy azalea logs on client side too (extra safety)
         const rawLogs = data.logs ?? [];
         const filtered = rawLogs.filter((l: any) => {
           const line = (l.line || "").toLowerCase();
@@ -114,8 +112,7 @@ export default function BotDetailView({
   const running = status === "online" || status === "connecting";
 
   return (
-    <div className="glass flex flex-col overflow-hidden rounded-[24px]">
-      {/* Header */}
+    <div className="glass flex flex-col overflow-hidden rounded-[24px] border border-slate-800/80">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/5 bg-white/[0.02] px-6 py-4">
         <div className="flex items-center gap-4">
           <BotAvatar
@@ -180,7 +177,6 @@ export default function BotDetailView({
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-white/5 bg-black/20 px-6">
         <button
           onClick={() => setTab("console")}
@@ -204,8 +200,7 @@ export default function BotDetailView({
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex h-[65vh] flex-col bg-[#030712]/50">
+      <div className="flex h-[68vh] flex-col bg-[#030712]/50">
         {tab === "console" ? (
           <>
             <div
@@ -290,7 +285,6 @@ function BotScreen({
 }) {
   const radar = useRef<HTMLCanvasElement>(null);
 
-  // Keyboard shortcuts: 1-9 select slot, R = use/right-click.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (tab !== "screen") return;
@@ -306,7 +300,6 @@ function BotScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [doAction, tab]);
 
-  // Radar drawing logic
   useEffect(() => {
     const canvas = radar.current;
     if (!canvas) return;
@@ -320,19 +313,28 @@ function BotScreen({
     const scale = Math.min(W, H) / 2 / RANGE;
 
     ctx.clearRect(0, 0, W, H);
-    const sky = snap?.isDay ? "#0b1220" : "#05070d";
+    const sky = snap?.isDay ? "#0e1525" : "#080c18";
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = "rgba(148,163,184,0.18)";
+    // subtle grid glow
+    ctx.strokeStyle = "rgba(99,102,241,0.12)";
     ctx.lineWidth = 1;
     for (let r = 8; r <= RANGE; r += 8) {
       ctx.beginPath();
       ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // crosshair
+    ctx.strokeStyle = "rgba(148,163,184,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, H);
+    ctx.moveTo(0, cy);
+    ctx.lineTo(W, cy);
+    ctx.stroke();
 
-    ctx.fillStyle = "rgba(56,189,248,0.10)";
+    ctx.fillStyle = "rgba(56,189,248,0.08)";
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     const fov = (70 * Math.PI) / 180;
@@ -341,11 +343,11 @@ function BotScreen({
     ctx.fill();
 
     if (snap?.nearbyBlocks) {
-      ctx.fillStyle = "rgba(71,85,105,0.55)";
+      ctx.fillStyle = "rgba(100,116,139,0.45)";
       for (const b of snap.nearbyBlocks) {
         const px = cx + b.right * scale;
         const py = cy - b.forward * scale;
-        ctx.fillRect(px - 2, py - 2, 4, 4);
+        ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
       }
     }
 
@@ -359,30 +361,39 @@ function BotScreen({
         else if (e.kind === "mob") color = "#f87171";
         else if (e.kind === "object") color = "#fbbf24";
         ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = e.kind === "player" ? 8 : 0;
         ctx.beginPath();
         ctx.arc(px, py, e.kind === "player" ? 5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
         if (e.kind === "player") {
-          ctx.fillStyle = "#a7f3d0";
-          ctx.font = "10px ui-monospace, monospace";
+          ctx.fillStyle = "rgba(167,243,208,0.9)";
+          ctx.font = "11px ui-monospace, monospace";
           ctx.fillText(e.name.slice(0, 12), px + 7, py + 3);
         }
       }
     }
 
     ctx.fillStyle = "#38bdf8";
+    ctx.shadowColor = "#38bdf8";
+    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.moveTo(cx, cy - 8);
     ctx.lineTo(cx - 5, cy + 6);
     ctx.lineTo(cx + 5, cy + 6);
     ctx.closePath();
     ctx.fill();
+    ctx.shadowBlur = 0;
   }, [snap]);
 
   if (!snap?.available) {
     return (
       <div className="grid h-full place-items-center px-6 py-20 text-center text-slate-500">
-        <div className="text-4xl">🛰️</div>
+        <div className="relative">
+          <div className="absolute inset-0 blur-2xl bg-indigo-500/10 rounded-full" />
+          <div className="relative text-4xl">🛰️</div>
+        </div>
         <p className="mt-3 max-w-sm text-sm">
           The bot must be online and spawned in the world to stream its view.
         </p>
@@ -393,134 +404,138 @@ function BotScreen({
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {snap.window ? (
-        <div className="flex flex-1 flex-col items-center justify-center p-6">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-[#c6c6c6] p-4 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between text-[#373737]">
-              <h3 className="font-bold">{snap.window.title || "Container"}</h3>
+        <div className="flex flex-1 flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_center,_rgba(99,102,241,0.08),_transparent_60%)]">
+          <div className="w-full max-w-[560px] rounded-[20px] border border-slate-700/50 bg-slate-900/80 p-5 shadow-2xl backdrop-blur-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-sm">📦</div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">{snap.window.title || "Container"}</h3>
+                  <p className="text-[11px] text-slate-500">{snap.window.slots.filter(Boolean).length} items</p>
+                </div>
+              </div>
               <button
                 onClick={() => doAction("closeWindow")}
-                className="rounded bg-rose-500 px-2 py-1 text-xs font-bold text-white shadow"
+                className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/20"
               >
-                Close (X)
+                Close
               </button>
             </div>
-            <div className="grid grid-cols-9 gap-1">
-              {snap.window.slots.map((it, idx) => (
-                <button
-                  key={idx}
-                  disabled={acting || !it}
-                  onClick={() => doAction("clickWindow", { slot: it?.slot })}
-                  className="group relative grid h-10 w-10 place-items-center bg-[#8b8b8b] shadow-[inset_-2px_-2px_0_rgba(255,255,255,0.5),inset_2px_2px_0_rgba(55,55,55,0.5)] hover:bg-[#a6a6a6] disabled:opacity-80"
-                >
-                  {it?.name && <ItemIcon name={it.name} />}
-                  {it && it.count > 1 && (
-                    <span className="absolute bottom-0 right-0.5 text-[10px] font-bold text-white drop-shadow-md">
-                      {it.count}
-                    </span>
-                  )}
-                  {it && (
-                    <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 scale-95 whitespace-nowrap rounded border border-slate-700/80 bg-[#0f0f0f]/95 px-2.5 py-1.5 text-xs opacity-0 shadow-2xl backdrop-blur transition-all group-hover:scale-100 group-hover:opacity-100">
-                      <span className="font-medium text-[#a855f7] drop-shadow-sm">{it.displayName}</span>
-                      <span className="ml-2 font-mono text-[#94a3b8]">x{it.count}</span>
-                    </div>
-                  )}
-                </button>
-              ))}
+            <div className="rounded-xl bg-slate-950/60 p-3 ring-1 ring-slate-800">
+              <div className="grid grid-cols-9 gap-2">
+                {snap.window.slots.map((it, idx) => (
+                  <button
+                    key={idx}
+                    disabled={acting || !it}
+                    onClick={() => doAction("clickWindow", { slot: it?.slot })}
+                    className={`group relative grid aspect-square place-items-center rounded-xl border transition-all duration-200 ${
+                      it
+                        ? "border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 hover:border-violet-500/40 hover:from-slate-800 hover:to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:shadow-[0_0_15px_rgba(139,92,246,0.15)] hover:scale-[1.04] active:scale-[0.97]"
+                        : "border-slate-800/30 bg-slate-900/20"
+                    } disabled:opacity-50`}
+                  >
+                    {it?.name ? (
+                      <>
+                        <ItemIcon name={it.name} size={28} />
+                        {it.count > 1 && (
+                          <span className="absolute -bottom-1 -right-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white ring-1 ring-slate-700 shadow">
+                            {it.count}
+                          </span>
+                        )}
+                        <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs shadow-2xl group-hover:block">
+                          <span className="font-medium text-violet-300">{it.displayName}</span>
+                          <span className="ml-2 font-mono text-slate-500">x{it.count}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-slate-700/50">·</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       ) : (
         <div className="grid gap-6 p-6 sm:grid-cols-[auto_1fr]">
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-4">
             {engine === "nmp" ? (
-              <div className="flex h-[300px] w-[300px] flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/60 text-center shadow-inner">
-                <span className="text-3xl">📡</span>
-                <span className="mt-4 font-semibold text-slate-300">Raw NMP Mode</span>
-                <span className="mt-2 max-w-[200px] text-xs text-slate-500">Radar and chunk processing disabled for stealth bypass.</span>
+              <div className="relative overflow-hidden rounded-[20px] border border-slate-800 bg-slate-900/60 p-[1px]">
+                <div className="flex h-[300px] w-[300px] flex-col items-center justify-center rounded-[19px] bg-gradient-to-br from-slate-900 to-slate-950 text-center">
+                  <div className="grid h-12 w-12 place-items-center rounded-xl bg-sky-500/10 text-2xl ring-1 ring-sky-500/20">📡</div>
+                  <span className="mt-4 font-semibold text-slate-200">Raw NMP Mode</span>
+                  <span className="mt-2 max-w-[220px] text-xs leading-relaxed text-slate-500">Radar and chunk processing disabled for stealth bypass. Pure protocol.</span>
+                </div>
               </div>
             ) : (
-              <canvas
-                ref={radar}
-                width={300}
-                height={300}
-                className="rounded-2xl border border-slate-800 bg-slate-950 shadow-inner"
-              />
+              <div className="relative rounded-[20px] border border-slate-800 bg-slate-900/60 p-[1px] shadow-xl">
+                <div className="rounded-[19px] bg-slate-950 p-2">
+                  <canvas
+                    ref={radar}
+                    width={300}
+                    height={300}
+                    className="rounded-[14px] bg-slate-950"
+                  />
+                  <div className="pointer-events-none absolute inset-2 rounded-[14px] ring-1 ring-white/5" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/20">LIVE</div>
+              </div>
             )}
             
-            {/* D-Pad Movement */}
-            <div className="grid grid-cols-3 grid-rows-2 gap-1.5 pt-2">
+            <div className="grid grid-cols-3 gap-2">
               <div />
-              <button
-                disabled={acting}
-                onClick={() => doAction("move", { dir: "forward" })}
-                className="rounded-lg bg-slate-800 p-3 text-slate-300 transition hover:bg-slate-700 active:scale-95"
-              >
-                W
-              </button>
+              <KeyCap label="W" k="W" onClick={() => doAction("move", { dir: "forward" })} disabled={acting} />
               <div />
-              <button
-                disabled={acting}
-                onClick={() => doAction("move", { dir: "left" })}
-                className="rounded-lg bg-slate-800 p-3 text-slate-300 transition hover:bg-slate-700 active:scale-95"
-              >
-                A
-              </button>
-              <button
-                disabled={acting}
-                onClick={() => doAction("move", { dir: "back" })}
-                className="rounded-lg bg-slate-800 p-3 text-slate-300 transition hover:bg-slate-700 active:scale-95"
-              >
-                S
-              </button>
-              <button
-                disabled={acting}
-                onClick={() => doAction("move", { dir: "right" })}
-                className="rounded-lg bg-slate-800 p-3 text-slate-300 transition hover:bg-slate-700 active:scale-95"
-              >
-                D
-              </button>
+              <KeyCap label="A" k="A" onClick={() => doAction("move", { dir: "left" })} disabled={acting} />
+              <KeyCap label="S" k="S" onClick={() => doAction("move", { dir: "back" })} disabled={acting} />
+              <KeyCap label="D" k="D" onClick={() => doAction("move", { dir: "right" })} disabled={acting} />
             </div>
           </div>
 
           <div className="space-y-4 text-sm">
             <div className="grid grid-cols-2 gap-3">
-              <Stat label="Health">❤️ {snap.health} / 20</Stat>
-              <Stat label="Food">🍗 {snap.food} / 20</Stat>
+              <Stat label="Health"><span className="flex items-center gap-1.5"><span className="text-rose-400">❤️</span> {snap.health} / 20</span></Stat>
+              <Stat label="Food"><span className="flex items-center gap-1.5"><span className="text-amber-400">🍗</span> {snap.food} / 20</span></Stat>
               <Stat label="Location">
-                {snap.position?.x ?? 0}, {snap.position?.y ?? 0}, {snap.position?.z ?? 0}
+                <span className="font-mono text-xs text-slate-300">{snap.position?.x ?? 0}, {snap.position?.y ?? 0}, {snap.position?.z ?? 0}</span>
               </Stat>
               <Stat label="Looking at">
-                {snap.lookingAt ? snap.lookingAt.name : "air"}
+                <span className="truncate text-slate-300">{snap.lookingAt ? snap.lookingAt.name : "air"}</span>
               </Stat>
             </div>
             
             <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h3 className="mb-2.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" />
                 Nearby Players & Mobs
               </h3>
-              <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 text-xs">
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/40 p-2.5 backdrop-blur">
                 {engine === "nmp" ? (
-                   <p className="px-2 py-1 text-slate-600">Entity tracking disabled.</p>
+                   <p className="px-2 py-2 text-xs text-slate-500">Entity tracking disabled in NMP mode.</p>
                 ) : snap.entities && snap.entities.length > 0 ? (
                   snap.entities.map((e, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 px-1">
-                      <span className="flex items-center gap-2 truncate text-slate-300">
+                    <div key={i} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 transition hover:bg-slate-800/60">
+                      <span className="flex items-center gap-2.5 truncate text-slate-300">
                         <span
-                          className="h-2 w-2 rounded-full"
+                          className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_6px]"
                           style={{
                             background:
-                              e.kind === "player" ? "#34d399" : "#f87171",
+                              e.kind === "player" ? "#34d399" : e.kind === "mob" ? "#f87171" : "#fbbf24",
+                            boxShadow: `0 0 6px ${e.kind === "player" ? "#34d399" : e.kind === "mob" ? "#f87171" : "#fbbf24"}`,
                           }}
                         />
-                        {e.name}
+                        <span className="truncate text-xs font-medium">{e.name}</span>
                       </span>
-                      <span className="font-mono text-slate-500">
+                      <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-400">
                         {e.distance}m
                       </span>
                     </div>
                   ))
                 ) : (
-                  <p className="px-2 py-1 text-slate-600">None nearby</p>
+                  <div className="grid place-items-center py-8 text-center">
+                    <div className="text-lg opacity-30">◍</div>
+                    <p className="mt-1 text-xs text-slate-600">No entities nearby</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -528,33 +543,39 @@ function BotScreen({
         </div>
       )}
 
-      {/* Hotbar */}
-      <div className="mt-auto border-t border-white/5 bg-black/40 p-5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="mt-auto border-t border-white/5 bg-gradient-to-b from-black/40 to-black/60 p-4 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2.5">
           {(snap.hotbar ?? []).map((it) => (
             <button
               key={it.slot}
               onClick={() => doAction("select", { slot: it.slot })}
               disabled={acting}
-              className={`group relative grid h-14 w-14 place-items-center rounded-xl border-2 transition disabled:opacity-60 ${
+              className={`group relative grid h-[56px] w-[56px] place-items-center rounded-[12px] border transition-all duration-200 ${
                 it.selected
-                  ? "border-emerald-400 bg-emerald-500/20 shadow-[0_0_15px_rgba(52,211,153,0.3)]"
-                  : "border-slate-800 bg-slate-900 hover:border-slate-600"
-              }`}
+                  ? "border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 shadow-[0_0_20px_rgba(16,185,129,0.25),inset_0_1px_0_rgba(255,255,255,0.1)] scale-[1.05]"
+                  : "border-slate-700/50 bg-gradient-to-br from-slate-800/60 to-slate-900/60 hover:border-slate-600 hover:from-slate-800 hover:to-slate-800/80 hover:scale-[1.03] active:scale-[0.97]"
+              } disabled:opacity-60`}
             >
-              <span className="absolute left-1.5 top-1 text-[9px] font-bold text-slate-500">
+              <span className={`absolute left-1.5 top-1 text-[10px] font-bold leading-none ${it.selected ? "text-emerald-300" : "text-slate-500"}`}>
                 {it.slot + 1}
               </span>
-              {it.name ? <ItemIcon name={it.name} /> : <span className="text-slate-700">·</span>}
-              {it.count > 1 && (
-                <span className="absolute bottom-1 right-1.5 text-xs font-bold text-white drop-shadow-md">
-                  {it.count}
-                </span>
+              {it.name ? (
+                <>
+                  <ItemIcon name={it.name} size={26} />
+                  {it.count > 1 && (
+                    <span className="absolute -bottom-1 -right-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white ring-1 ring-slate-700 shadow-md">
+                      {it.count}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-slate-700">·</span>
               )}
+              {it.selected && <span className="absolute inset-0 rounded-[11px] bg-emerald-400/10 animate-pulse" />}
               {it.name && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 -translate-x-1/2 scale-95 whitespace-nowrap rounded-md border border-slate-700/80 bg-[#0f0f0f]/95 px-3 py-1.5 text-xs opacity-0 shadow-2xl backdrop-blur-md transition-all group-hover:scale-100 group-hover:opacity-100">
-                  <span className="font-semibold text-white drop-shadow-sm">{it.displayName}</span>
-                  <span className="ml-2 font-mono text-[#94a3b8]">x{it.count}</span>
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-3 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs shadow-2xl group-hover:block">
+                  <span className="font-semibold text-white">{it.displayName}</span>
+                  <span className="ml-2 font-mono text-slate-500">x{it.count}</span>
                 </div>
               )}
             </button>
@@ -564,23 +585,23 @@ function BotScreen({
             <button
               onClick={() => doAction("use")}
               disabled={acting || !snap.heldItem}
-              className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:bg-emerald-400 disabled:opacity-40"
+              className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-3 text-sm font-bold text-emerald-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition hover:from-emerald-300 hover:to-emerald-500 active:scale-[0.97] disabled:opacity-40"
             >
               Right-click / Use
             </button>
             <button
               onClick={() => doAction("drop")}
               disabled={acting || !snap.heldItem}
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-700 disabled:opacity-40"
+              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-700 active:scale-[0.97] disabled:opacity-40"
             >
               Drop
             </button>
-            <div className="mx-2 h-8 w-px bg-slate-800"></div>
+            <div className="mx-1 h-8 w-px bg-slate-800" />
             {beam?.looping ? (
               <button
                 onClick={() => doAction("beam_stop")}
                 disabled={acting}
-                className="rounded-xl bg-rose-500 px-5 py-3 text-sm font-bold text-rose-950 shadow-[0_0_20px_-5px_rgba(244,63,94,0.4)] transition hover:bg-rose-400 disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-b from-rose-400 to-rose-600 px-5 py-3 text-sm font-bold text-rose-950 shadow-[0_0_20px_rgba(244,63,94,0.3)] transition hover:from-rose-300 hover:to-rose-500 active:scale-[0.97] disabled:opacity-40"
               >
                 ⏹ Stop Beam
               </button>
@@ -588,7 +609,7 @@ function BotScreen({
               <button
                 onClick={() => doAction("beam_start")}
                 disabled={acting || !snap.available}
-                className="rounded-xl bg-fuchsia-500 px-5 py-3 text-sm font-bold text-fuchsia-950 shadow-[0_0_20px_-5px_rgba(217,70,239,0.4)] transition hover:bg-fuchsia-400 disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-b from-fuchsia-400 to-fuchsia-600 px-5 py-3 text-sm font-bold text-fuchsia-950 shadow-[0_0_20px_rgba(217,70,239,0.3)] transition hover:from-fuchsia-300 hover:to-fuchsia-500 active:scale-[0.97] disabled:opacity-40"
               >
                 📡 Start Beam
               </button>
@@ -600,6 +621,19 @@ function BotScreen({
   );
 }
 
+function KeyCap({ label, k, onClick, disabled }: { label: string; k: string; onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="group relative grid h-11 w-11 place-items-center rounded-xl border border-slate-700/80 bg-gradient-to-b from-slate-800 to-slate-900 text-sm font-bold text-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] transition-all hover:from-slate-700 hover:to-slate-800 hover:text-white hover:border-slate-600 active:translate-y-[2px] active:shadow-none disabled:opacity-40"
+    >
+      {k}
+      <span className="absolute -bottom-5 text-[9px] font-medium uppercase tracking-widest text-slate-600 group-hover:text-slate-400">{label}</span>
+    </button>
+  );
+}
+
 function Stat({
   label,
   children,
@@ -608,11 +642,11 @@ function Stat({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-3">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 backdrop-blur">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
         {label}
       </div>
-      <div className="mt-1 truncate font-semibold text-slate-200">
+      <div className="mt-1.5 truncate font-semibold text-slate-200">
         {children}
       </div>
     </div>
@@ -621,43 +655,33 @@ function Stat({
 
 const ITEM_IMG_VERSION = "1.21.4";
 function itemImageUrl(name: string, dir: "item" | "block"): string {
-  // Handle some common mismatches between mineflayer names and vanilla texture names
-  let cleanName = name.replace("spear", "trident"); // map custom spears to trident
-  if (cleanName === "glass_pane") cleanName = "white_stained_glass_pane"; // default pane texture
+  let cleanName = name.replace("spear", "trident");
+  if (cleanName === "glass_pane") cleanName = "white_stained_glass_pane";
   if (cleanName.endsWith("_pane") && dir === "block") {
-    // pane blocks use the solid glass texture in assets often
     cleanName = cleanName.replace("_pane", "");
   }
   return `https://assets.mcasset.cloud/${ITEM_IMG_VERSION}/assets/minecraft/textures/${dir}/${cleanName}.png`;
 }
 
-function ItemIcon({ name }: { name: string }) {
+function ItemIcon({ name, size = 32 }: { name: string; size?: number }) {
   const [stage, setStage] = useState<0 | 1 | 2 | 3>(0);
-
-  // Stage 0: try "item" texture
-  // Stage 1: try "block" texture
-  // Stage 2: try generic fallback (apple for food, sword for weapons, etc)
-  // Stage 3: Letter fallback
   
   const getUrl = () => {
     if (stage === 0) return itemImageUrl(name, "item");
     if (stage === 1) return itemImageUrl(name, "block");
-    
-    // Stage 2 semantic fallbacks
     if (name.includes("sword") || name.includes("blade") || name.includes("spear")) return itemImageUrl("iron_sword", "item");
     if (name.includes("potion")) return itemImageUrl("potion", "item");
     if (name.includes("helmet")) return itemImageUrl("iron_helmet", "item");
     if (name.includes("chestplate")) return itemImageUrl("iron_chestplate", "item");
     if (name.includes("leggings")) return itemImageUrl("iron_leggings", "item");
     if (name.includes("boots")) return itemImageUrl("iron_boots", "item");
-    
-    return ""; // force stage 3
+    return "";
   };
 
   if (stage === 3) {
     const letter = name.replace(/[^a-zA-Z]/g, "").charAt(0).toUpperCase() || "?";
     return (
-      <div className="grid h-8 w-8 place-items-center rounded bg-slate-800 text-sm font-bold text-slate-300 shadow-inner">
+      <div className="grid place-items-center rounded-lg bg-slate-800 text-xs font-bold text-slate-300" style={{ width: size, height: size }}>
         {letter}
       </div>
     );
@@ -668,11 +692,11 @@ function ItemIcon({ name }: { name: string }) {
     <img
       src={getUrl()}
       alt={name}
-      width={32}
-      height={32}
+      width={size}
+      height={size}
       onError={() => setStage((s) => (s + 1) as 0 | 1 | 2 | 3)}
       style={{ imageRendering: "pixelated" }}
-      className="h-8 w-8 object-contain drop-shadow-md"
+      className="object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]"
     />
   );
 }

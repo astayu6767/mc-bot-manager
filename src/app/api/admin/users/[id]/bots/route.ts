@@ -29,6 +29,8 @@ export async function GET(
       username: b.username,
       host: b.host,
       port: b.port,
+      version: b.version,
+      engine: b.engine,
       status: rt.status,
     };
   });

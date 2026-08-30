@@ -73,9 +73,11 @@ function generateRandomSuffix(length = 12): string {
 }
 
 export function generateLicenseKey(): string {
-  // e.g. abeam-key-aqiwok192k or abeam-key-x7f9k2m1p0q3
-  const suffix = generateRandomSuffix(10);
-  return `abeam-key-${suffix}`;
+  // New format: abeam-key-awqkk192p-12kasj (like 9 chars + dash + 6 chars)
+  // Example: abeam-key-x7k9p2m4q1-8f3j2k
+  const part1 = generateRandomSuffix(9); // e.g. awqkk192p
+  const part2 = generateRandomSuffix(6); // e.g. 12kasj
+  return `abeam-key-${part1}-${part2}`;
 }
 
 /**
