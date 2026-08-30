@@ -1,14 +1,18 @@
 # syntax=docker/dockerfile:1
-# MC Bot Manager — simple fix: one nightly, real binary, no dummy tricks
-# Uses nightly-2024-02-01 which is before FixedBitSet E0284 breaking change
-# Plus fixedbitset 0.5.7 patch to ensure E0284 is fixed
+# Simple fix: use nightly-bookworm base, then install specific nightly-2024-02-01 via rustup
+# This fixes E0284 because 2024-02-01 is before the breaking change
 
-FROM rustlang/rust:nightly-2024-02-01-bookworm AS azalea
+FROM rustlang/rust:nightly-bookworm AS azalea
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_BUILD_JOBS=2 \
     CARGO_INCREMENTAL=0
+
+# Install the specific nightly that works with azalea 0.16.0
+RUN rustup toolchain install nightly-2024-02-01 --no-self-update && \
+    rustup override set nightly-2024-02-01 && \
+    rustc --version && cargo --version
 
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
 
@@ -18,8 +22,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 
 COPY azalea-bridge/src ./src
 
-# Real build - single attempt, no fallback to dummy
-# If this fails, Docker build fails and you see the real error
+# Real build - single nightly, no dummy
 RUN touch src/main.rs && \
     echo ">> Building Azalea with $(rustc --version)" && \
     cargo build --release && \
