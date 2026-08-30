@@ -191,7 +191,7 @@ fn display_name_from_id(id: &str) -> String {
         .join(" ")
 }
 
-fn kind_to_names(kind: &azalea_registry::builtin::ItemKind) -> (String, String) {
+fn kind_to_names(kind: &azalea::registry::builtin::ItemKind) -> (String, String) {
     let full = kind.to_string(); // minecraft:stone
     let name = full
         .strip_prefix("minecraft:")
