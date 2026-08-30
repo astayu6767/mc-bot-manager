@@ -5,3 +5,7 @@ node_modules
 *.log
 .vscode
 dist
+*.zip
+launcher_accounts.json
+.git
+.gitignore

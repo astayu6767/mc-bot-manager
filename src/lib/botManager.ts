@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { db } from "@/db";
 import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getBotEntitlementForUserId } from "@/lib/entitlement";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -333,6 +334,24 @@ export function getLogs(id: string): LogEntry[] {
 }
 
 async function startRawNmpBot(record: Bot, rt: BotRuntime) {
+  // Entitlement guard also for raw NMP path (protects direct calls and reconnects)
+  if (record.userId) {
+    try {
+      const entitlement = await getBotEntitlementForUserId(record.userId);
+      if (!entitlement.allowed) {
+        const msg = entitlement.reason || "Bot start denied: entitlement check failed";
+        rt.status = "offline";
+        rt.joined = false;
+        rt.lastError = msg;
+        log(rt, "error", msg);
+        await setDbStatus(record.id, "error", msg);
+        return;
+      }
+    } catch (err) {
+      console.error("Entitlement check error in startRawNmpBot:", err);
+    }
+  }
+
   let mc: typeof import("minecraft-protocol");
   try {
     mc = await import("minecraft-protocol");
@@ -632,6 +651,27 @@ export async function startBot(record: Bot): Promise<void> {
   rt.status = "connecting";
   rt.joined = false;
   rt.lastError = null;
+
+  // Licensing/entitlement guard - protects both manual starts and automatic reconnects
+  if (record.userId) {
+    try {
+      const entitlement = await getBotEntitlementForUserId(record.userId);
+      if (!entitlement.allowed) {
+        const msg = entitlement.reason || "Bot start denied: entitlement check failed";
+        rt.status = "offline";
+        rt.joined = false;
+        rt.lastError = msg;
+        log(rt, "error", msg);
+        await setDbStatus(record.id, "error", msg);
+        return;
+      }
+    } catch (err) {
+      // If entitlement check itself fails, log but allow to continue (fail open)
+      // Change to fail closed if you want strict licensing
+      console.error("Entitlement check error in startBot:", err);
+    }
+  }
+
   const versionLabel =
     record.version && record.version !== "auto" ? record.version : "auto-detect";
   log(
