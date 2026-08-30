@@ -1,28 +1,29 @@
 # syntax=docker/dockerfile:1
-# Simple fix: use a stable bookworm base, then install specific nightly-2024-02-01 via rustup
-# This fixes E0284 because 2024-02-01 is before the breaking change
+# Use official rust image (library/rust) which definitely exists
+# Then install specific nightly via rustup
 
-FROM rustlang/rust:1.80-bookworm AS azalea
+FROM rust:bookworm AS azalea
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_BUILD_JOBS=2 \
     CARGO_INCREMENTAL=0
 
-# Install the specific nightly that works with azalea 0.16.0
+# Install nightly-2024-02-01 which is before E0284 breaking change
 RUN rustup toolchain install nightly-2024-02-01 --no-self-update && \
+    rustup default nightly-2024-02-01 && \
     rustup override set nightly-2024-02-01 && \
     rustc --version && cargo --version
 
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
 
-# Prefetch deps
+# Prefetch
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
     && cargo build --release || true
 
 COPY azalea-bridge/src ./src
 
-# Real build - single nightly, no dummy
+# Real build - single attempt
 RUN touch src/main.rs && \
     echo ">> Building Azalea with $(rustc --version)" && \
     cargo build --release && \
