@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Fix E0284 by replacing bitset.rs with Vec-based version that doesn't use generic_const_exprs
-# Uses git main which has edition2024 support
+# Working version: nightly-2026-07-02 that started working on re-deploy
+# Includes fixed_bitset.rs patch for E0284
 
 FROM rust:bookworm AS azalea
 WORKDIR /src
@@ -8,29 +8,29 @@ ENV CARGO_TERM_COLOR=always \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_BUILD_JOBS=2
 
+RUN rustup toolchain install nightly-2026-07-02 --no-self-update && \
+    rustup default nightly-2026-07-02 && \
+    rustup override set nightly-2026-07-02 && \
+    rustc --version
+
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
 COPY azalea-bridge/fixed_bitset.rs ./fixed_bitset.rs
 
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || true
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo +nightly-2026-07-02 build --release || true
 
 COPY azalea-bridge/src ./src
 
-# Patch script that replaces bitset.rs with our fixed version
 RUN echo '#!/bin/sh\n\
-echo ">> Patching azalea-core bitset.rs with fixed Vec version..."\n\
-find /usr/local/cargo -name "bitset.rs" -type f 2>/dev/null | while read f; do\n\
-  echo "Replacing $f with fixed version"\n\
-  cp /src/fixed_bitset.rs "$f"\n\
-done\n\
-ls -lh /usr/local/cargo/git/checkouts/azalea-*/ -R 2>/dev/null | grep bitset || true\n\
+echo ">> Patching bitset.rs..."\n\
+find /usr/local/cargo -name "bitset.rs" -type f 2>/dev/null | while read f; do cp /src/fixed_bitset.rs "$f"; echo "Patched $f"; done\n\
 ' > /tmp/patch.sh && chmod +x /tmp/patch.sh
 
 RUN touch src/main.rs && \
-    echo ">> Building Azalea git main with $(rustc --version)" && \
+    echo ">> Building Azalea with $(rustc --version)" && \
     /tmp/patch.sh && \
-    cargo build --release && \
+    cargo +nightly-2026-07-02 build --release && \
     cp target/release/azalea-bridge /azalea-bridge && \
-    echo ">> SUCCESS - real binary built" && \
+    echo ">> SUCCESS - real binary built with nightly-2026-07-02" && \
     ls -lh /azalea-bridge
 
 FROM node:22-bookworm-slim AS base
