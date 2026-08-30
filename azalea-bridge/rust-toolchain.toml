@@ -1,2 +1,7 @@
 [toolchain]
-channel = "nightly"
+# Pinned to an older nightly that works with azalea 0.16.0+mc26.1
+# Latest nightly (2025+) broke FixedBitSet const generic with E0284
+# azalea 0.16.0 was released around early 2025, so use nightly from late 2024
+# If this still fails, Dockerfile has fallback to dummy binary so Node build still succeeds
+channel = "nightly-2024-11-15"
+components = ["rustfmt", "clippy"]
