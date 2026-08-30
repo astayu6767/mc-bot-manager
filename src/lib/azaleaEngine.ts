@@ -1,147 +1,422 @@
-/**
- * Azalea Engine - Stub / Future Rust Integration
- * 
- * This file is intentionally kept free of filesystem operations at the top level
- * to avoid Turbopack's "Encountered unexpected file in NFT list" warnings.
- * 
- * The original error was:
- * - next.config.ts -> azaleaEngine.ts -> botManager.ts -> stop route
- * - Caused by path.join/process.cwd/fs.readFile at module scope
- * 
- * If you need to implement Azalea (Rust Minecraft bot), do:
- * 1. Keep all fs/path operations inside functions, not at top level
- * 2. Use dynamic imports
- * 3. Mark as server-only
- */
-
-import type { Bot } from "@/db/schema";
-
-// Server-only marker - ensures this module is never bundled for client
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export type AzaleaBotOptions = {
-  botId: string;
-  host: string;
-  port: number;
-  username?: string;
-  token: string;
-  version?: string;
-};
+import { spawn, type ChildProcess } from "child_process";
+import { EventEmitter } from "events";
+import readline from "readline";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { bots, type Bot } from "@/db/schema";
+import type { BotStatus, LogEntry, ViewSnapshot } from "@/app/types";
 
 export type AzaleaRuntime = {
   id: string;
-  status: "offline" | "connecting" | "online" | "error";
-  process?: unknown;
+  status: BotStatus;
+  joined: boolean;
+  lastError: string | null;
+  logs: LogEntry[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  bot: any | null;
+  manualStop: boolean;
+  nmpPlayers: Set<string>;
+  azaleaChild?: ChildProcess | null;
+  azaleaSnap?: ViewSnapshot | null;
 };
 
-// In-memory runtimes for Azalea bots (separate from mineflayer runtimes)
-const azaleaRuntimes = new Map<string, AzaleaRuntime>();
+type Helpers = {
+  // Runtime is the botManager BotRuntime; keep this loose to avoid a cycle.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  log: (rt: any, level: LogEntry["level"], line: string) => void;
+  setDbStatus: (
+    id: string,
+    status: BotStatus,
+    lastError?: string | null,
+  ) => Promise<void>;
+  resolveProfile: (token: string) => Promise<{ id: string; name: string }>;
+};
 
-function getAzaleaRuntime(id: string): AzaleaRuntime {
-  let rt = azaleaRuntimes.get(id);
-  if (!rt) {
-    rt = { id, status: "offline" };
-    azaleaRuntimes.set(id, rt);
+function findAzaleaBinary(): string | null {
+  // Use turbopackIgnore to prevent Turbopack from tracing the entire project
+  // due to filesystem operations. This is the recommended fix for:
+  // "Encountered unexpected file in NFT list"
+  const candidates = [
+    process.env.AZALEA_BRIDGE_BIN,
+    "/usr/local/bin/azalea-bridge",
+    // Scoped to subfolder and marked with turbopackIgnore
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    (() => {
+      try {
+        // Dynamic require to avoid top-level tracing
+        const p = require("path");
+        return p.join(
+          /*turbopackIgnore: true*/ process.cwd(),
+          "azalea-bridge",
+          "target",
+          "release",
+          "azalea-bridge",
+        );
+      } catch {
+        return null;
+      }
+    })(),
+    (() => {
+      try {
+        const p = require("path");
+        return p.join(
+          /*turbopackIgnore: true*/ process.cwd(),
+          "bin",
+          "azalea-bridge",
+        );
+      } catch {
+        return null;
+      }
+    })(),
+  ].filter((s): s is string => Boolean(s));
+
+  for (const c of candidates) {
+    try {
+      // Use dynamic fs to avoid top-level tracing
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const f = require("fs");
+      if (f.existsSync(c) && f.statSync(c).isFile()) return c;
+    } catch {
+      // ignore
+    }
   }
-  return rt;
+  return null;
 }
 
-/**
- * Start an Azalea bot (Rust-based)
- * Currently a stub that falls back to explaining the setup needed.
- * 
- * To implement real Azalea:
- * - Build Rust binary via cargo (see Dockerfile)
- * - Spawn child_process with bot credentials
- * - Pipe logs
- */
-export async function startAzaleaBot(record: Bot): Promise<void> {
-  const rt = getAzaleaRuntime(record.id);
-  rt.status = "connecting";
+class AzaleaHandle extends EventEmitter {
+  child: ChildProcess;
+  username: string;
+  using = false;
+  entity: { position: { x: number; y: number; z: number }; yaw: number; pitch: number } | null =
+    null;
+  health = 20;
+  food = 20;
+  inventory = { slots: [] as unknown[] };
+  quickBarSlot = 0;
+  heldItem: { name: string; displayName: string; count: number } | null = null;
+  currentWindow: unknown = null;
+  physicsEnabled = false;
+  version = "26.1";
+  players: Record<string, { username: string }> = {};
 
-  // Check if Azalea binary exists (inside function, not top-level)
-  // This avoids Turbopack tracing the whole filesystem
+  constructor(child: ChildProcess, username: string) {
+    super();
+    this.child = child;
+    this.username = username;
+  }
+
+  private send(payload: Record<string, unknown>) {
+    try {
+      this.child.stdin?.write(JSON.stringify(payload) + "\n");
+    } catch {
+      // ignore
+    }
+  }
+
+  chat(message: string) {
+    this.send({ op: "chat", text: message });
+  }
+
+  quit() {
+    this.send({ op: "disconnect" });
+    try {
+      this.child.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+  }
+
+  end(_reason?: string) {
+    this.quit();
+  }
+
+  setControlState(dir: string, on: boolean) {
+    const map: Record<string, string> = {
+      forward: "forward",
+      back: "back",
+      left: "left",
+      right: "right",
+      sneak: "sneak",
+      jump: "jump",
+    };
+    const mapped = map[dir] ?? dir;
+    if (mapped === "jump" && on) {
+      this.send({ op: "jump" });
+      return;
+    }
+    if (mapped === "sneak") {
+      this.send({ op: "sneak", on });
+      return;
+    }
+    this.send({ op: "walk", dir: mapped, on, ms: on ? 600 : 0 });
+  }
+
+  clearControlStates() {
+    this.send({ op: "walk", dir: "none", on: false });
+    this.send({ op: "sneak", on: false });
+  }
+
+  async setQuickBarSlot(slot: number) {
+    this.quickBarSlot = slot;
+    this.send({ op: "select", slot });
+  }
+
+  activateItem() {
+    this.using = true;
+    this.send({ op: "use" });
+  }
+
+  deactivateItem() {
+    this.using = false;
+    this.send({ op: "use_stop" });
+  }
+
+  async consume() {
+    this.activateItem();
+    await new Promise((r) => setTimeout(r, 1600));
+    this.deactivateItem();
+  }
+
+  async tossStack(_held: unknown) {
+    this.send({ op: "drop" });
+  }
+
+  look(_yaw: number, _pitch: number, _force?: boolean) {
+    this.send({ op: "look" });
+  }
+
+  nearestEntity() {
+    return null;
+  }
+}
+
+export async function startAzaleaBot(
+  record: Bot,
+  rt: AzaleaRuntime,
+  helpers: Helpers,
+): Promise<void> {
+  const { log, setDbStatus, resolveProfile } = helpers;
+
+  const bin = findAzaleaBinary();
+  if (!bin) {
+    const msg =
+      "Azalea engine selected, but the azalea-bridge binary is missing. Rebuild the Docker image (first build compiles the Rust client and takes several minutes).";
+    rt.status = "error";
+    rt.lastError = msg;
+    log(rt, "error", msg);
+    await setDbStatus(record.id, "error", msg);
+    return;
+  }
+
+  let profile: { id: string; name: string };
   try {
-    // Dynamic import to avoid top-level fs
-    const { spawn } = await import("child_process");
-    const { existsSync } = await import("fs");
-    
-    // Look for binary in known locations - scoped to subfolder to avoid NFT warning
-    const possiblePaths = [
-      "./azalea-bot", // local binary
-      "./target/release/azalea-bot",
-      "/app/azalea-bot",
-      "/app/target/release/azalea-bot",
-    ];
-
-    let binaryPath: string | null = null;
-    for (const p of possiblePaths) {
-      try {
-        if (existsSync(p)) {
-          binaryPath = p;
-          break;
-        }
-      } catch {
-        // ignore
-      }
+    log(rt, "system", "Validating Minecraft token...");
+    profile = await resolveProfile(record.token);
+    log(rt, "system", `Authenticated as ${profile.name} (${profile.id}).`);
+    try {
+      await db
+        .update(bots)
+        .set({ username: profile.name, uuid: profile.id })
+        .where(eq(bots.id, record.id));
+    } catch {
+      // ignore — status still proceeds
     }
-
-    if (!binaryPath) {
-      // No binary - log and fallback
-      // In production, you would build the Rust binary in Dockerfile:
-      // RUN cargo build --release
-      throw new Error(
-        "Azalea binary not found. Build it with 'cargo build --release' or use mineflayer/nmp engine.",
-      );
-    }
-
-    // If binary exists, spawn it (example)
-    // const child = spawn(binaryPath, [record.host, String(record.port), record.token], {...})
-    // rt.process = child
-    // rt.status = "online"
-
-    rt.status = "error";
-    throw new Error("Azalea engine stub - binary found but integration not completed");
   } catch (err) {
-    rt.status = "error";
     const msg = err instanceof Error ? err.message : String(err);
-    // Don't throw - let caller handle via logs
-    console.error(`[Azalea] Failed to start bot ${record.id}:`, msg);
-    throw err;
+    rt.status = "error";
+    rt.lastError = msg;
+    log(rt, "error", msg);
+    await setDbStatus(record.id, "error", msg);
+    return;
   }
-}
 
-export async function stopAzaleaBot(id: string): Promise<void> {
-  const rt = azaleaRuntimes.get(id);
-  if (rt) {
-    rt.status = "offline";
-    if (rt.process) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const proc = rt.process as any;
-        if (typeof proc.kill === "function") proc.kill();
-      } catch {
-        // ignore
-      }
-      rt.process = undefined;
-    }
-  }
-  azaleaRuntimes.delete(id);
-}
+  log(
+    rt,
+    "system",
+    `Starting Azalea sidecar (${bin}). Protocol is latest vanilla (Minecraft 26.1) — ViaVersion servers accept it; 1.8-only servers will not.`,
+  );
 
-export function getAzaleaRuntimeView(id: string) {
-  const rt = azaleaRuntimes.get(id);
-  if (!rt) return { status: "offline" as const, joined: false };
-  return {
-    status: rt.status,
-    joined: rt.status === "online",
+  const child = spawn(bin, [], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, RUST_LOG: process.env.RUST_LOG || "warn" },
+  });
+  rt.azaleaChild = child;
+
+  const handle = new AzaleaHandle(child, profile.name);
+  rt.bot = handle;
+
+  const writeStart = () => {
+    const start = {
+      op: "start",
+      host: record.host,
+      port: record.port,
+      username: profile.name,
+      uuid: profile.id,
+      token: record.token,
+      proxy: record.proxy || "",
+    };
+    child.stdin?.write(JSON.stringify(start) + "\n");
   };
-}
 
-// Re-export for compatibility if botManager wants to use Azalea
-export const azaleaEngine = {
-  start: startAzaleaBot,
-  stop: stopAzaleaBot,
-  getRuntime: getAzaleaRuntimeView,
-};
+  if (child.stdin) {
+    writeStart();
+  } else {
+    child.once("spawn", writeStart);
+  }
+
+  const onLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let msg: {
+      ev?: string;
+      level?: LogEntry["level"];
+      line?: string;
+      status?: BotStatus;
+      name?: string;
+      available?: boolean;
+    } & Partial<ViewSnapshot>;
+    try {
+      msg = JSON.parse(trimmed);
+    } catch {
+      log(rt, "system", trimmed);
+      return;
+    }
+    switch (msg.ev) {
+      case "log":
+        log(rt, msg.level || "system", String(msg.line || ""));
+        break;
+      case "chat": {
+        const text = String(msg.line || "");
+        log(rt, "chat", text);
+        handle.emit("messagestr", text);
+        break;
+      }
+      case "status":
+        if (msg.status === "online") {
+          rt.status = "online";
+          rt.joined = true;
+          rt.lastError = null;
+          void setDbStatus(record.id, "online");
+        }
+        break;
+      case "error": {
+        const errLine = String(msg.line || "Azalea error");
+        log(rt, "error", errLine);
+        if (!rt.manualStop) {
+          rt.status = "error";
+          rt.lastError = errLine;
+          rt.joined = false;
+          void setDbStatus(record.id, "error", errLine);
+        }
+        handle.emit("kicked", errLine);
+        break;
+      }
+      case "death":
+        handle.emit("death");
+        log(rt, "system", "Bot died.");
+        break;
+      case "player_add":
+        if (msg.name) {
+          rt.nmpPlayers.add(msg.name);
+          handle.players[msg.name] = { username: msg.name };
+          handle.emit("playerJoined", { username: msg.name });
+        }
+        break;
+      case "player_remove":
+        if (msg.name) {
+          rt.nmpPlayers.delete(msg.name);
+          delete handle.players[msg.name];
+          handle.emit("playerLeft", { username: msg.name });
+        }
+        break;
+      case "snapshot": {
+        const snap: ViewSnapshot = {
+          available: true,
+          username: (msg.username as string) || profile.name,
+          position: msg.position || { x: 0, y: 0, z: 0 },
+          yaw: Number(msg.yaw || 0),
+          pitch: Number(msg.pitch || 0),
+          facing: (msg.facing as string) || "S",
+          health: Number(msg.health ?? 20),
+          food: Number(msg.food ?? 20),
+          dimension: (msg.dimension as string) || "overworld",
+          timeOfDay: Number(msg.timeOfDay ?? 0),
+          isDay: msg.isDay !== false,
+          heldItem: (msg.heldItem as string | null) ?? null,
+          lookingAt: msg.lookingAt ?? null,
+          entities: msg.entities ?? [],
+          nearbyBlocks: msg.nearbyBlocks ?? [],
+          hotbar: msg.hotbar ?? [],
+          selectedSlot: Number(msg.selectedSlot ?? 0),
+          using: handle.using,
+          window: msg.window ?? null,
+        };
+        rt.azaleaSnap = snap;
+        handle.entity = {
+          position: snap.position || { x: 0, y: 0, z: 0 },
+          yaw: snap.yaw || 0,
+          pitch: snap.pitch || 0,
+        };
+        handle.health = snap.health || 20;
+        handle.food = snap.food || 20;
+        handle.quickBarSlot = snap.selectedSlot || 0;
+        break;
+      }
+      case "end":
+        if (rt.manualStop) {
+          rt.status = "offline";
+          log(rt, "system", "Bot stopped.");
+          void setDbStatus(record.id, "offline");
+        } else if (rt.status !== "error") {
+          const reason = String(msg.line || "azalea exited");
+          rt.status = rt.joined ? "offline" : "error";
+          rt.lastError = rt.joined ? null : `Disconnected: ${reason}`;
+          log(rt, rt.joined ? "system" : "error", `Disconnected: ${reason}`);
+          void setDbStatus(record.id, rt.status, rt.lastError);
+        }
+        rt.joined = false;
+        handle.emit("end", String(msg.line || "end"));
+        break;
+      default:
+        break;
+    }
+  };
+
+  if (child.stdout) {
+    const rl = readline.createInterface({ input: child.stdout });
+    rl.on("line", onLine);
+  }
+  if (child.stderr) {
+    const rlErr = readline.createInterface({ input: child.stderr });
+    rlErr.on("line", (line) => {
+      const t = line.trim();
+      if (t) log(rt, "system", `[azalea] ${t}`);
+    });
+  }
+
+  child.on("error", (err) => {
+    const msg = "Failed to spawn Azalea bridge: " + err.message;
+    rt.status = "error";
+    rt.lastError = msg;
+    log(rt, "error", msg);
+    void setDbStatus(record.id, "error", msg);
+  });
+
+  child.on("exit", (code, signal) => {
+    rt.azaleaChild = null;
+    if (rt.manualStop) {
+      rt.status = "offline";
+      rt.joined = false;
+      void setDbStatus(record.id, "offline");
+      return;
+    }
+    if (rt.status === "online" || rt.status === "connecting") {
+      const msg = `Azalea process exited (code=${code ?? "?"} signal=${signal ?? "none"}).`;
+      rt.status = "error";
+      rt.joined = false;
+      rt.lastError = msg;
+      log(rt, "error", msg);
+      void setDbStatus(record.id, "error", msg);
+    }
+  });
+}

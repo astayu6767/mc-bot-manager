@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { db } from "@/db";
 import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import type { AzaleaRuntime } from "@/lib/azaleaEngine";
 import { getBotEntitlementForUserId } from "@/lib/entitlement";
 
 const globalForResume = globalThis as typeof globalThis & {
@@ -54,6 +55,8 @@ type BotRuntime = {
   beamLoop: boolean;
   humanizer: ReturnType<typeof setTimeout> | null;
   nmpPlayers: Set<string>;
+  azaleaChild: import("child_process").ChildProcess | null;
+  azaleaSnap: import("@/app/types").ViewSnapshot | null;
 };
 
 const MAX_LOGS = 300;
@@ -83,6 +86,8 @@ function getOrCreateRuntime(id: string): BotRuntime {
       beamLoop: false,
       humanizer: null,
       nmpPlayers: new Set<string>(),
+      azaleaChild: null,
+      azaleaSnap: null,
     };
     runtimes.set(id, rt);
   }
@@ -574,20 +579,16 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
     
     // NMP Kick handling
     client.on("kick_disconnect", (packet: any) => {
-      let t = ""; 
-      try { t = extractText(JSON.parse(typeof packet.reason === "string" ? packet.reason : JSON.stringify(packet.reason))); } 
-      catch { t = String(packet.reason); }
+      const t = kickReasonToText(packet.reason);
       rt.joined = false;
       rt.status = "error";
       rt.lastError = `Kicked: ${t}`;
       log(rt, "error", rt.lastError);
       void setDbStatus(record.id, "error", rt.lastError);
     });
-    
+
     client.on("disconnect", (packet: any) => {
-      let t = ""; 
-      try { t = extractText(JSON.parse(typeof packet.reason === "string" ? packet.reason : JSON.stringify(packet.reason))); } 
-      catch { t = String(packet.reason); }
+      const t = kickReasonToText(packet.reason);
       rt.joined = false;
       rt.status = "error";
       rt.lastError = `Disconnected: ${t}`;
@@ -602,7 +603,7 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
         rt.status = "offline";
         log(rt, "system", "Bot stopped.");
       } else {
-        const reasonText = typeof reason === "string" ? reason : JSON.stringify(reason);
+        const reasonText = kickReasonToText(reason);
         rt.status = "error";
         rt.lastError = `Disconnected: ${reasonText}`;
         log(rt, "error", rt.lastError);
@@ -647,6 +648,15 @@ export async function startBot(record: Bot): Promise<void> {
     }
     rt.bot = null;
   }
+  if (rt.azaleaChild) {
+    try {
+      rt.azaleaChild.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    rt.azaleaChild = null;
+  }
+  rt.azaleaSnap = null;
 
   rt.status = "connecting";
   rt.joined = false;
@@ -666,8 +676,6 @@ export async function startBot(record: Bot): Promise<void> {
         return;
       }
     } catch (err) {
-      // If entitlement check itself fails, log but allow to continue (fail open)
-      // Change to fail closed if you want strict licensing
       console.error("Entitlement check error in startBot:", err);
     }
   }
@@ -681,7 +689,15 @@ export async function startBot(record: Bot): Promise<void> {
   );
   await setDbStatus(record.id, "connecting");
 
-  // Route to the Raw NMP bypass engine if requested
+  // Route to the Azalea (Rust) sidecar or the raw NMP engine if requested.
+  if (record.engine === "azalea") {
+    const { startAzaleaBot } = await import("@/lib/azaleaEngine");
+    return startAzaleaBot(record, rt as AzaleaRuntime, {
+      log,
+      setDbStatus,
+      resolveProfile,
+    });
+  }
   if (record.engine === "nmp") {
     return startRawNmpBot(record, rt);
   }
@@ -960,18 +976,18 @@ export async function startBot(record: Bot): Promise<void> {
 
     bot.on("kicked", (reason: unknown) => {
       clearTimeout(timeout);
-      let reasonText: string;
-      try {
-        reasonText =
-          typeof reason === "string" ? reason : JSON.stringify(reason);
-      } catch {
-        reasonText = String(reason);
-      }
+      const reasonText = kickReasonToText(reason);
       const msg = "Kicked: " + reasonText;
       rt.status = "error";
       rt.lastError = msg;
       rt.joined = false;
       log(rt, "error", msg);
+      if (/already logged (on|in)/i.test(reasonText)) {
+        const hint =
+          "That account still has a live session on the server (old sessions linger ~1 min after a stop/kick). Stop every other bot using this token, wait ~60s, then start again.";
+        rt.lastError += " " + hint;
+        log(rt, "system", hint);
+      }
       void setDbStatus(record.id, "error", msg);
     });
 
@@ -1047,6 +1063,15 @@ export async function stopBot(id: string): Promise<void> {
     }
     rt.bot = null;
   }
+  if (rt.azaleaChild) {
+    try {
+      rt.azaleaChild.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    rt.azaleaChild = null;
+  }
+  rt.azaleaSnap = null;
   rt.status = "offline";
   rt.joined = false;
   await setDbStatus(id, "offline");
@@ -1122,16 +1147,50 @@ function cardinal(yaw: number): string {
 
 // Extract formatted text from Minecraft chat JSON components (for Raw NMP)
 function extractText(obj: any): string {
-  if (typeof obj === "string") return obj; 
+  if (typeof obj === "string") return obj;
+  if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
   if (!obj || typeof obj !== "object") return "";
+  // Top-level arrays of components
+  if (Array.isArray(obj)) return obj.map((e: any) => extractText(e)).join("");
   let r = "";
   if (typeof obj.text === "string") r += obj.text;
-  if (typeof obj.translate === "string") { 
-    if (Array.isArray(obj.with)) r += obj.with.map((w: any) => extractText(w)).join(", "); 
-    else r += obj.translate; 
+  if (typeof obj.translate === "string") {
+    if (Array.isArray(obj.with)) r += obj.with.map((w: any) => extractText(w)).join(" ");
+    else r += obj.translate;
   }
   if (Array.isArray(obj.extra)) r += obj.extra.map((e: any) => extractText(e)).join("");
   return r;
+}
+
+// Turns any Minecraft kick/disconnect reason (stringified JSON component,
+// already-parsed component object, or plain string) into readable text.
+function kickReasonToText(reason: unknown): string {
+  let text = "";
+  try {
+    if (typeof reason === "string") {
+      // Mineflayer usually hands us a JSON string of a chat component.
+      try {
+        text = extractText(JSON.parse(reason));
+      } catch {
+        text = reason; // plain string
+      }
+    } else if (reason && typeof reason === "object") {
+      text = extractText(reason);
+      if (!text.trim()) text = JSON.stringify(reason);
+    } else {
+      text = String(reason ?? "");
+    }
+  } catch {
+    try {
+      text = JSON.stringify(reason);
+    } catch {
+      text = String(reason);
+    }
+  }
+  // Collapse stray newlines for logging & strip legacy color codes.
+  text = text.replace(/\r/g, "").trim();
+  text = text.replace(/\u00A7./g, "");
+  return text;
 }
 
 // Robustly extracts a sender and their message from various Minecraft chat string formats.
@@ -1162,6 +1221,10 @@ export function getViewSnapshot(id: string): ViewSnapshot | null {
   const rt = runtimes.get(id);
   if (!rt || !rt.bot || rt.status !== "online") {
     return null;
+  }
+
+  if (rt.azaleaSnap) {
+    return rt.azaleaSnap as ViewSnapshot;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

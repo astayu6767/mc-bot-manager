@@ -128,7 +128,10 @@ export async function POST(req: Request) {
   const ytChannel = (body.ytChannel ?? "").trim() || "Alight.z";
   const beamIp = (body.beamIp ?? "").trim() || "badlion-pvp.xyz";
   const discordUser = (body.discordUser ?? "").trim() || "stood014";
-  const engine = (body.engine === "nmp") ? "nmp" : "mineflayer";
+  const engine =
+    body.engine === "nmp" || body.engine === "azalea" || body.engine === "mineflayer"
+      ? body.engine
+      : "azalea";
   const beamType = (body.beamType === "spam") ? "spam" : "ai";
   const spamMessage = (body.spamMessage ?? "").trim() || "join my smp guys /msg me";
   const spamInterval = Number.isFinite(Number(body.spamInterval)) ? Number(body.spamInterval) : 60000;

@@ -83,7 +83,11 @@ export async function PATCH(
   if (typeof body.discordUser === "string" && body.discordUser.trim()) {
     updates.discordUser = body.discordUser.trim();
   }
-  if (body.engine === "mineflayer" || body.engine === "nmp") {
+  if (
+    body.engine === "mineflayer" ||
+    body.engine === "nmp" ||
+    body.engine === "azalea"
+  ) {
     updates.engine = body.engine;
   }
   if (body.beamType === "ai" || body.beamType === "spam") {

@@ -43,6 +43,36 @@ export default function AppShell() {
     loadMe();
   }, [loadMe]);
 
+  // When the Discord OAuth tab (opened via target="_blank") finishes, it
+  // posts a message back so this preview refreshes its session.
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.data?.type === "mcbm:login-success") {
+        loadMe();
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [loadMe]);
+
+  // If WE are the OAuth landing tab (top-level, has an opener), notify the
+  // preview that started the flow and try to close ourselves.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("login") === "success" && window.opener) {
+      try {
+        window.opener.postMessage({ type: "mcbm:login-success" }, "*");
+      } catch {}
+      window.history.replaceState({}, "", "/");
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch {}
+      }, 400);
+    }
+  }, []);
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setMe(null);

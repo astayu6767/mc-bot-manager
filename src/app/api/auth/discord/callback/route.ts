@@ -74,7 +74,7 @@ export async function GET(req: Request) {
         : null,
     });
 
-    const res = NextResponse.redirect(`${origin}/`);
+    const res = NextResponse.redirect(`${origin}/?login=success`);
     attachSessionCookie(res, user.id);
     return res;
   } catch (err) {

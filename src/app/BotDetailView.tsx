@@ -122,6 +122,7 @@ export default function BotDetailView({
             <p className="text-sm font-medium text-slate-400">
               {bot.host}:{bot.port}
               {bot.username && ` · as ${bot.username}`}
+              {bot.engine && ` · ${bot.engine === "azalea" ? "Azalea" : bot.engine === "nmp" ? "NMP" : "Mineflayer"}`}
             </p>
           </div>
         </div>
@@ -164,7 +165,6 @@ export default function BotDetailView({
         </div>
       </div>
 
-      {/* Tabs */}
       {/* Tabs */}
       <div className="flex border-b border-white/5 bg-black/20 px-6">
         <button

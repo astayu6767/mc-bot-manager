@@ -1,85 +1,56 @@
-# Dockerfile for running the Next.js + bot manager app in production
-# - Handles both Node.js only and optional Rust (Azalea) builds
-# - Installs all dependencies (including devDeps, needed for drizzle-kit migrations)
-# - Builds Next.js and runs drizzle-kit push before starting next start
+# syntax=docker/dockerfile:1
+# MC Bot Manager — production image (Railway / any Docker host)
+# Stage 1 compiles the Azalea (Rust) sidecar. First build is slow (~10–20 min).
 
-# ---- Base Node stage ----
-FROM node:20-alpine AS base
-RUN apk add --no-cache python3 make g++ bash libc6-compat
+FROM rustlang/rust:nightly-bookworm AS azalea
+WORKDIR /src
+ENV CARGO_TERM_COLOR=always \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    CARGO_BUILD_JOBS=2
+
+# Copy Rust manifests
+COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
+
+# Prefetch crates with a stub so later source-only changes reuse the cache.
+RUN mkdir src && echo "fn main() {}" > src/main.rs \
+    && cargo build --release || true
+
+COPY azalea-bridge/src ./src
+RUN touch src/main.rs && cargo build --release \
+    && cp target/release/azalea-bridge /azalea-bridge
+
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# ---- Dependencies stage ----
+# ---- dependencies (dev deps included: drizzle-kit is needed at startup) ----
 FROM base AS deps
-COPY package.json package-lock.json* ./
-# Use npm ci if lock file exists, otherwise npm install
-RUN if [ -f package-lock.json ]; then \
-      npm ci --no-optional --silent; \
-    else \
-      npm install --no-optional --silent; \
-    fi
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# ---- Rust builder stage (optional, only if Cargo.toml exists) ----
-# This stage is cached separately and will be skipped if no Rust code
-FROM rust:1.75-alpine AS rust-builder
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
-WORKDIR /app
-# Copy Cargo files if they exist, otherwise create dummy to allow caching
-COPY Cargo.toml Cargo.lock* ./
-COPY src-tauri/Cargo.toml src-tauri/Cargo.toml 2>/dev/null || true
-# Create dummy main.rs to build dependencies first (caching optimization)
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
-    cargo build --release || true
-# Copy actual Rust source if exists
-COPY . .
-RUN if [ -f Cargo.toml ]; then \
-      cargo build --release || echo "Rust build failed, continuing..."; \
-    else \
-      echo "No Cargo.toml found, skipping Rust build"; \
-    fi
-
-# ---- Builder stage ----
-FROM base AS builder
-WORKDIR /app
+# ---- build ----
+FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Copy Rust binary if it was built (optional)
-COPY --from=rust-builder /app/target/release/azalea-bot* ./ 2>/dev/null || true
-COPY --from=rust-builder /app/azalea-bot* ./ 2>/dev/null || true
-
-# Set env to avoid Next.js telemetry and to make build more robust
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
-# Skip font optimization network calls if offline (we now use system fonts)
-ENV NEXT_DISABLE_FONT_DOWNLOAD=1
-
-# Build the Next app
-# Use --no-lint to avoid eslint failures blocking deploy, but keep type checking
+# Placeholder so module init during `next build` doesn't throw.
+# The real DATABASE_URL is injected by the platform at runtime.
+ENV DATABASE_URL=postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder
 RUN npm run build
 
-# ---- Runtime stage ----
+# ---- runtime ----
 FROM base AS runtime
-WORKDIR /app
-
 ENV NODE_ENV=production
-ENV PORT=3000
-ENV NEXT_TELEMETRY_DISABLED=1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy necessary files from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/public ./public 2>/dev/null || true
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/drizzle ./drizzle 2>/dev/null || true
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts 2>/dev/null || true
-COPY --from=builder /app/drizzle.config.json ./drizzle.config.json 2>/dev/null || true
-COPY --from=builder /app/src ./src 2>/dev/null || true
-# Copy Rust binary if exists
-COPY --from=builder /app/azalea-bot* ./ 2>/dev/null || true
-COPY --from=builder /app/target/release/azalea-bot* ./ 2>/dev/null || true
-
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+COPY --from=azalea /azalea-bridge /usr/local/bin/azalea-bridge
+COPY package.json package-lock.json next.config.ts tsconfig.json ./
+COPY drizzle.config.ts ./
+COPY src/db ./src/db
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh /usr/local/bin/azalea-bridge
 EXPOSE 3000
-
-# Run DB migrations then start Next.js
-CMD ["/bin/sh", "-lc", "npx drizzle-kit push && npx next start -p $PORT"]
+CMD ["./start.sh"]
