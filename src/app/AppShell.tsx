@@ -6,6 +6,7 @@ import AdminPanel from "./AdminPanel";
 import SettingsPanel from "./SettingsPanel";
 import TrainAiPanel from "./TrainAiPanel";
 import LicensePanel from "./LicensePanel";
+import ShopPanel from "./ShopPanel";
 import { Logo } from "./Logo";
 
 type Me = {
@@ -18,7 +19,7 @@ type Me = {
   isGuest: boolean;
 };
 
-type Tab = "dashboard" | "license" | "admin" | "train" | "settings";
+type Tab = "dashboard" | "license" | "shop" | "admin" | "train" | "settings";
 
 export default function AppShell() {
   const [me, setMe] = useState<Me | null>(null);
@@ -99,6 +100,7 @@ export default function AppShell() {
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "dashboard", label: "Bots", icon: <BotIcon /> },
     { key: "license", label: "License", icon: <TicketIcon /> },
+    { key: "shop", label: "Shop", icon: <ShopIcon /> },
     ...(me.role === "admin"
       ? [
           { key: "admin" as Tab, label: "Admin", icon: <ShieldIcon /> },
@@ -216,6 +218,7 @@ export default function AppShell() {
           <div key={tab} className="animate-fade-in">
             {tab === "dashboard" && <BotDashboard />}
             {tab === "license" && <LicensePanel />}
+            {tab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}
             {tab === "admin" && me.role === "admin" && (
               <AdminPanel meId={me.id} />
             )}
@@ -461,6 +464,15 @@ function TicketIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
       <path d="M13 5v2M13 17v2M13 11v2" />
+    </svg>
+  );
+}
+function ShopIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <path d="M16 10a4 4 0 01-8 0" />
     </svg>
   );
 }
