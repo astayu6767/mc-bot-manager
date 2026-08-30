@@ -15,6 +15,10 @@ use std::{
 };
 
 use azalea::{
+    prelude::*,
+    protocol::connect::Proxy,
+    AccountTrait, ClientInformation, JoinOpts,
+};
     account::AccountTrait,
     prelude::*,
     protocol::connect::Proxy,
@@ -248,6 +252,14 @@ fn facing_from_yaw(yaw_deg: f32) -> &'static str {
     ["S", "SW", "W", "NW", "N", "NE", "E", "SE"][i]
 }
 
+fn snapshot(bot: &Client) -> Value {
+    let pos = bot.position();
+    let food = bot.hunger().food as f64;
+    let dir = bot.direction();
+    let yaw = dir.y_rot() as f64;
+    let pitch = dir.x_rot() as f64;
+    let slot = bot.selected_hotbar_slot();
+    json!({
 fn pascal_to_snake(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 8);
     for (index, ch) in raw.chars().enumerate() {
