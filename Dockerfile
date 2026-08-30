@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # MC Bot Manager — production image (Railway / any Docker host)
 # Stage 1 compiles the Azalea (Rust) sidecar. First build is slow (~10–20 min).
-# Fixed: pinned nightly, graceful fallback if Rust build fails
+# Fixed: tries multiple nightly versions to handle FixedBitSet E0284
 
 FROM rustlang/rust:nightly-bookworm AS azalea
 WORKDIR /src
@@ -19,13 +19,27 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 
 COPY azalea-bridge/src ./src
 
-# Build the real binary - with fallback to dummy if build fails
-# This prevents entire deployment from failing if Rust nightly has breaking changes
+# Build the real binary - tries multiple strategies
+# 1. Try with pinned toolchain (2024-08-01)
+# 2. If fails, try even older nightly
+# 3. If fails, try git main branch of azalea
+# 4. If all fail, create dummy so Node deploy still works
 RUN touch src/main.rs && \
-    (cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Azalea build succeeded") || \
-    (echo ">> WARNING: Azalea Rust build failed - creating dummy binary. JS engines (mineflayer/nmp) will still work." && \
+    echo ">> Attempt 1: Building with pinned toolchain (nightly-2024-08-01)..." && \
+    (cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Azalea build succeeded with 2024-08-01") || \
+    (echo ">> Attempt 1 failed, trying nightly-2024-06-01..." && \
+     rustup toolchain install nightly-2024-06-01 && rustup override set nightly-2024-06-01 && \
+     cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Azalea build succeeded with 2024-06-01") || \
+    (echo ">> Attempt 2 failed, trying nightly-2024-04-01..." && \
+     rustup toolchain install nightly-2024-04-01 && rustup override set nightly-2024-04-01 && \
+     cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Azalea build succeeded with 2024-04-01") || \
+    (echo ">> Attempt 3 failed, trying azalea from git main with latest nightly..." && \
+     rustup override set nightly && \
+     printf '[package]\nname = \"azalea-bridge\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nazalea = { git = \"https://github.com/azalea-rs/azalea\", branch = \"main\", default-features = true }\nazalea-auth = { git = \"https://github.com/azalea-rs/azalea\", branch = \"main\" }\neyre = \"0.6\"\nparking_lot = \"0.12\"\nreqwest = { version = \"0.13\", default-features = false, features = [\"json\"] }\nserde = { version = \"1\", features = [\"derive\"] }\nserde_json = \"1\"\ntokio = { version = \"1\", features = [\"full\"] }\ntracing = \"0.1\"\ntracing-subscriber = { version = \"0.3\", features = [\"env-filter\"] }\nuuid = { version = \"1\", features = [\"serde\"] }\n\n[profile.release]\nlto = false\ncodegen-units = 8\nopt-level = 3\ndebug = false\nstrip = true\n' > Cargo.toml && \
+     cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Azalea build succeeded with git main") || \
+    (echo ">> WARNING: All Azalea Rust builds failed - creating dummy binary. JS engines (mineflayer/nmp) will still work." && \
      echo '#!/bin/sh' > /azalea-bridge && \
-     echo 'echo "{\"ev\":\"error\",\"line\":\"Azalea binary not available - Rust build failed. Use mineflayer or nmp engine.\"}"' >> /azalea-bridge && \
+     echo 'echo "{\"ev\":\"error\",\"line\":\"Azalea binary not available - Rust build failed after trying multiple toolchains. Use mineflayer or nmp engine.\"}"' >> /azalea-bridge && \
      chmod +x /azalea-bridge)
 
 FROM node:22-bookworm-slim AS base
