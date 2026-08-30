@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
-# Simple fix: use nightly-bookworm base, then install specific nightly-2024-02-01 via rustup
+# Simple fix: use a stable bookworm base, then install specific nightly-2024-02-01 via rustup
 # This fixes E0284 because 2024-02-01 is before the breaking change
 
-FROM rustlang/rust:nightly-bookworm AS azalea
+FROM rustlang/rust:1.80-bookworm AS azalea
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
