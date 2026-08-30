@@ -1,42 +1,49 @@
 # syntax=docker/dockerfile:1
+# MC Bot Manager — production image (Railway / any Docker host)
+# Stage 1 compiles the Azalea (Rust) sidecar. First build is slow (~10–20 min).
+# 1:1 copy from Lexxxy123/arena/01a04ee5 plus minimal fix for EPIPE crash
+
 FROM rustlang/rust:nightly-bookworm AS azalea
 WORKDIR /src
-ENV CARGO_TERM_COLOR=always CARGO_NET_GIT_FETCH_WITH_CLI=true CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUSTFLAGS="-C debuginfo=0"
+ENV CARGO_TERM_COLOR=always \
+    CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    CARGO_BUILD_JOBS=2
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || echo "Prefetch failed"
+# Prefetch crates with a stub so later source-only changes reuse the cache.
+RUN mkdir src && echo "fn main() {}" > src/main.rs \
+    && cargo build --release || true
 COPY azalea-bridge/src ./src
-
-# Build with many fallbacks - shows real errors
+# Try to build Rust, but create a long-lived dummy if it fails so Node can still deploy
+# Dummy reads stdin and responds with error JSON for each start request (avoids EPIPE)
 RUN touch src/main.rs && \
-    echo "=== AZALEA BUILD START ===" && \
-    echo "Toolchain: $(rustc --version)" && \
-    echo "Trying pinned (nightly-2024-02-01) with azalea 0.16.0..." && \
-    (cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS PINNED" && ls -lh /azalea-bridge) || \
-    (echo ">> PINNED FAILED, trying nightly-2024-08-01" && rustup toolchain install nightly-2024-08-01 --no-self-update && rustup override set nightly-2024-08-01 && cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-08-01" && ls -lh /azalea-bridge) || \
-    (echo ">> 2024-08-01 FAILED, trying 2024-06-01" && rustup toolchain install nightly-2024-06-01 --no-self-update && rustup override set nightly-2024-06-01 && cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-06-01") || \
-    (echo ">> 2024-06-01 FAILED, trying 2024-02-01" && rustup toolchain install nightly-2024-02-01 --no-self-update && rustup override set nightly-2024-02-01 && cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-02-01") || \
-    (echo ">> 2024-02-01 FAILED, trying 2023-12-01" && rustup toolchain install nightly-2023-12-01 --no-self-update && rustup override set nightly-2023-12-01 && cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2023-12-01") || \
-    (echo ">> ALL 0.16.0 FAILED, trying azalea git main (this should fix E0284)" && rustup override set nightly && \
-     printf '[package]\nname = "azalea-bridge"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\nazalea = { git = "https://github.com/azalea-rs/azalea", branch = "main" }\nazalea-auth = { git = "https://github.com/azalea-rs/azalea", branch = "main" }\neyre = "0.6"\nparking_lot = "0.12"\nreqwest = { version = "0.13", default-features = false, features = ["json"] }\nserde = { version = "1", features = ["derive"] }\nserde_json = "1"\ntokio = { version = "1", features = ["full"] }\ntracing = "0.1"\ntracing-subscriber = { version = "0.3", features = ["env-filter"] }\nuuid = { version = "1", features = ["serde"] }\n[profile.release]\nlto = false\ncodegen-units = 8\nopt-level = 3\n' > Cargo.toml && \
-     cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS GIT MAIN" && ls -lh /azalea-bridge) || \
-    (echo ">> GIT MAIN FAILED, trying with patched fixedbitset" && \
-     printf '[package]\nname = "azalea-bridge"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\nazalea = { version = "0.16.0" }\nazalea-auth = "0.16.0"\neyre = "0.6"\nparking_lot = "0.12"\nreqwest = { version = "0.13", default-features = false, features = ["json"] }\nserde = { version = "1", features = ["derive"] }\nserde_json = "1"\ntokio = { version = "1", features = ["full"] }\ntracing = "0.1"\ntracing-subscriber = { version = "0.3", features = ["env-filter"] }\nuuid = { version = "1", features = ["serde"] }\n[patch.crates-io]\nfixedbitset = "0.5.7"\n[profile.release]\nlto = false\ncodegen-units = 8\nopt-level = 3\n' > Cargo.toml && rustup override set nightly-2024-02-01 && cargo clean && cargo build --release 2>&1 && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS PATCHED") || \
-    (echo ">> ALL FAILED, creating dummy (JS engines still work)" && echo '#!/bin/sh' > /azalea-bridge && echo 'echo "{\"ev\":\"error\",\"line\":\"Azalea not available - Rust build failed after all attempts\"}"' >> /azalea-bridge && chmod +x /azalea-bridge && ls -lh /azalea-bridge)
+    (cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> Rust build SUCCESS - real binary") || \
+    (echo ">> Rust build FAILED - creating long-lived dummy that handles stdin" && \
+     printf '#!/bin/sh\n# Dummy Azalea bridge - stays alive, reads stdin, replies with error\n# This prevents EPIPE crash when Node writes to it\nwhile IFS= read -r line; do\n  if echo "$line" | grep -q "\"op\":\"start\""; then\n    echo "{\"ev\":\"error\",\"line\":\"Azalea not available - Rust build failed. Use mineflayer or nmp engine.\"}"\n    echo "{\"ev\":\"end\",\"line\":\"dummy exit\"}"\n  fi\ndone\n# Keep alive if no input yet (for health checks)\nwhile true; do sleep 1; done\n' > /azalea-bridge && chmod +x /azalea-bridge && ls -lh /azalea-bridge)
 
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# ---- dependencies (dev deps included: drizzle-kit is needed at startup) ----
 FROM base AS deps
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# ---- build ----
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Placeholder so module init during `next build` doesn't throw.
+# The real DATABASE_URL is injected by the platform at runtime.
 ENV DATABASE_URL=postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder
 RUN npm run build
+
+# ---- runtime ----
 FROM base AS runtime
 ENV NODE_ENV=production
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
 COPY --from=azalea /azalea-bridge /usr/local/bin/azalea-bridge
@@ -44,6 +51,6 @@ COPY package.json package-lock.json next.config.ts tsconfig.json ./
 COPY drizzle.config.ts ./
 COPY src/db ./src/db
 COPY start.sh ./start.sh
-RUN chmod +x ./start.sh /usr/local/bin/azalea-bridge && ls -lh /usr/local/bin/azalea-bridge && file /usr/local/bin/azalea-bridge && /usr/local/bin/azalea-bridge --help 2>&1 | head -n 5 || echo "Binary check done (dummy will show error JSON)"
+RUN chmod +x ./start.sh /usr/local/bin/azalea-bridge && ls -lh /usr/local/bin/azalea-bridge
 EXPOSE 3000
 CMD ["./start.sh"]

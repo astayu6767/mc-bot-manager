@@ -75,7 +75,15 @@ class AzaleaHandle extends EventEmitter {
 
   private send(payload: Record<string, unknown>) {
     try {
-      this.child.stdin?.write(JSON.stringify(payload) + "\n");
+      const data = JSON.stringify(payload) + "\n";
+      if (this.child.stdin && !this.child.stdin.destroyed) {
+        this.child.stdin.write(data, (err) => {
+          if (err && (err as NodeJS.ErrnoException).code !== "EPIPE") {
+            // ignore EPIPE, log other errors
+            console.warn("Azalea stdin write error:", err.message);
+          }
+        });
+      }
     } catch {
       // ignore
     }
@@ -210,6 +218,21 @@ export async function startAzaleaBot(
   });
   rt.azaleaChild = child;
 
+  // Prevent EPIPE crash - dummy binary may exit quickly
+  if (child.stdin) {
+    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code !== "EPIPE") {
+        log(rt, "error", `Azalea stdin error: ${err.message}`);
+      }
+    });
+  }
+  if (child.stdout) {
+    child.stdout.on("error", () => {});
+  }
+  if (child.stderr) {
+    child.stderr.on("error", () => {});
+  }
+
   const handle = new AzaleaHandle(child, profile.name);
   rt.bot = handle;
 
@@ -223,7 +246,24 @@ export async function startAzaleaBot(
       token: record.token,
       proxy: record.proxy || "",
     };
-    child.stdin?.write(JSON.stringify(start) + "\n");
+    try {
+      if (child.stdin && !child.stdin.destroyed) {
+        child.stdin.write(JSON.stringify(start) + "\n", (err) => {
+          if (err) {
+            if ((err as NodeJS.ErrnoException).code === "EPIPE") {
+              log(rt, "system", "Azalea bridge closed early (dummy or crashed). Use mineflayer/nmp engine.");
+              rt.status = "error";
+              rt.lastError = "Azalea bridge not available - Rust build failed. Use mineflayer or nmp.";
+              void setDbStatus(record.id, "error", rt.lastError);
+            } else {
+              log(rt, "error", `Failed to write start: ${err.message}`);
+            }
+          }
+        });
+      }
+    } catch (e) {
+      log(rt, "error", `Failed to start Azalea: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   if (child.stdin) {
