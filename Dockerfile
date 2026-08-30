@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Fix E0284 by patching azalea-core bitset.rs + using nightly that supports edition2024
-# Tries multiple nightlies from 2024 that have edition2024 but not E0284
+# Fix E0284 by replacing bitset.rs with Vec-based version that doesn't use generic_const_exprs
+# Uses git main which has edition2024 support
 
 FROM rust:bookworm AS azalea
 WORKDIR /src
@@ -9,36 +9,29 @@ ENV CARGO_TERM_COLOR=always \
     CARGO_BUILD_JOBS=2
 
 COPY azalea-bridge/rust-toolchain.toml azalea-bridge/Cargo.toml ./
+COPY azalea-bridge/fixed_bitset.rs ./fixed_bitset.rs
 
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release || true
 
 COPY azalea-bridge/src ./src
 
-# Patch function to fix E0284 in azalea-core
-# The error is FixedBitSet<const N> where [u8; bits_to_bytes(N)] fails to infer
-# Fix: wrap const expr in { } and ensure generic_const_exprs feature
+# Patch script that replaces bitset.rs with our fixed version
 RUN echo '#!/bin/sh\n\
-echo ">> Patching azalea-core bitset.rs for E0284..."\n\
+echo ">> Patching azalea-core bitset.rs with fixed Vec version..."\n\
 find /usr/local/cargo -name "bitset.rs" -type f 2>/dev/null | while read f; do\n\
-  echo "Patching $f"\n\
-  # Fix FixedBitSet\n\
-  sed -i "s/\\[u8; bits_to_bytes(N)\\]/[u8; { bits_to_bytes(N) }]/g" "$f"\n\
-  sed -i "s/\\[u64; bits_to_longs(N)\\]/[u64; { bits_to_longs(N) }]/g" "$f"\n\
-  # Also fix new() that uses [0; bits_to_bytes(N)]\n\
-  sed -i "s/\\[0; bits_to_bytes(N)\\]/[0; { bits_to_bytes(N) }]/g" "$f"\n\
-  sed -i "s/\\[0; bits_to_longs(N)\\]/[0; { bits_to_longs(N) }]/g" "$f"\n\
+  echo "Replacing $f with fixed version"\n\
+  cp /src/fixed_bitset.rs "$f"\n\
 done\n\
+ls -lh /usr/local/cargo/git/checkouts/azalea-*/ -R 2>/dev/null | grep bitset || true\n\
 ' > /tmp/patch.sh && chmod +x /tmp/patch.sh
 
 RUN touch src/main.rs && \
-    echo ">> Trying with current toolchain $(rustc --version)" && \
-    (/tmp/patch.sh; cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS current" && ls -lh /azalea-bridge) || \
-    (echo ">> Current failed, trying nightly-2024-08-01" && rustup toolchain install nightly-2024-08-01 --no-self-update && rustup override set nightly-2024-08-01 && cargo clean && /tmp/patch.sh && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-08-01") || \
-    (echo ">> 2024-08-01 failed, trying nightly-2024-10-01" && rustup toolchain install nightly-2024-10-01 --no-self-update && rustup override set nightly-2024-10-01 && cargo clean && /tmp/patch.sh && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-10-01") || \
-    (echo ">> 2024-10-01 failed, trying nightly-2024-12-01" && rustup toolchain install nightly-2024-12-01 --no-self-update && rustup override set nightly-2024-12-01 && cargo clean && /tmp/patch.sh && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2024-12-01") || \
-    (echo ">> 2024-12-01 failed, trying nightly-2025-01-01" && rustup toolchain install nightly-2025-01-01 --no-self-update && rustup override set nightly-2025-01-01 && cargo clean && /tmp/patch.sh && cargo build --release && cp target/release/azalea-bridge /azalea-bridge && echo ">> SUCCESS 2025-01-01") || \
-    (echo ">> All attempts failed - creating dummy that stays alive" && \
-     printf '#!/bin/sh\nwhile IFS= read -r line; do if echo "$line" | grep -q "\"op\":\"start\""; then echo "{\"ev\":\"error\",\"line\":\"Azalea not available - Rust build failed after all attempts\"}"; echo "{\"ev\":\"end\",\"line\":\"dummy\"}"; fi; done; while true; do sleep 1; done\n' > /azalea-bridge && chmod +x /azalea-bridge && ls -lh /azalea-bridge)
+    echo ">> Building Azalea git main with $(rustc --version)" && \
+    /tmp/patch.sh && \
+    cargo build --release && \
+    cp target/release/azalea-bridge /azalea-bridge && \
+    echo ">> SUCCESS - real binary built" && \
+    ls -lh /azalea-bridge
 
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
