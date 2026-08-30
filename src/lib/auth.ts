@@ -10,6 +10,28 @@ import {
   isDiscordConfigured as cfgDiscord,
 } from "@/lib/config";
 
+const PBKDF2_ITER = 100000;
+const PBKDF2_KEYLEN = 64;
+const PBKDF2_DIGEST = "sha512";
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITER, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  if (!stored || !stored.includes(":")) return false;
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const derived = crypto.pbkdf2Sync(password, salt, PBKDF2_ITER, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(derived, "hex"));
+  } catch {
+    return false;
+  }
+}
+
 const COOKIE_NAME = "mcbm_session";
 const SECRET = SESSION_SECRET;
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -44,7 +66,9 @@ export const SESSION_MAX_AGE = MAX_AGE;
 
 export const sessionCookieOptions = {
   httpOnly: true,
-  sameSite: "lax" as const,
+  // "none" is required so the session survives when the app is viewed inside
+  // a cross-site embedded preview (e.g. an iframe). Secure is already set.
+  sameSite: "none" as const,
   secure: true,
   path: "/",
   maxAge: MAX_AGE,
@@ -154,7 +178,7 @@ export async function upsertDiscordUser(profile: {
       username: profile.username,
       avatar: profile.avatar,
       role: shouldBeAdmin ? "admin" : "user",
-      botSlots: 2,
+      botSlots: 0,
     })
     .returning();
   return created;
@@ -179,8 +203,54 @@ export async function getOrCreateDevUser(name: string): Promise<User> {
       username: handle,
       avatar: null,
       role: shouldBeAdmin ? "admin" : "user",
-      botSlots: 2,
+      botSlots: 0,
     })
     .returning();
   return created;
+}
+
+export async function createLocalUser(params: {
+  username: string;
+  password: string;
+  role?: string;
+}): Promise<User> {
+  const { username, password, role } = params;
+  const cleanName = username.trim().slice(0, 32);
+  if (!cleanName) throw new Error("Username required");
+  if (password.length < 3) throw new Error("Password too short");
+
+  const existing = await db.select().from(users).where(eq(users.username, cleanName));
+  if (existing.length > 0) {
+    throw new Error("Username already taken");
+  }
+
+  const totalUsers = await db.select({ id: users.id }).from(users);
+  const shouldBeAdmin = totalUsers.length === 0 || role === "admin";
+
+  const [created] = await db
+    .insert(users)
+    .values({
+      discordId: `local:${cleanName.toLowerCase()}:${Date.now()}`,
+      username: cleanName,
+      avatar: null,
+      role: shouldBeAdmin ? "admin" : role || "user",
+      botSlots: 0,
+      passwordHash: hashPassword(password),
+    })
+    .returning();
+  return created;
+}
+
+export async function authenticateLocalUser(username: string, password: string): Promise<User | null> {
+  const cleanName = username.trim();
+  if (!cleanName) return null;
+  const [user] = await db.select().from(users).where(eq(users.username, cleanName));
+  if (!user) return null;
+  if (!user.passwordHash) return null;
+  if (!verifyPassword(password, user.passwordHash)) return null;
+  return user;
+}
+
+export async function registerLocalUser(username: string, password: string): Promise<User> {
+  return createLocalUser({ username, password, role: "user" });
 }

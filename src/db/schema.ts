@@ -8,8 +8,47 @@ export const users = pgTable("users", {
   avatar: text("avatar"),
   // "user" | "admin"
   role: text("role").notNull().default("user"),
-  // How many bots this user is allowed to create
-  botSlots: integer("bot_slots").notNull().default(2),
+  // How many bots this user is allowed to create - starts at 0, needs license
+  botSlots: integer("bot_slots").notNull().default(0),
+  // Password auth (local accounts)
+  passwordHash: text("password_hash").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Licenses table - admin can give license with slots and duration (days/hours)
+export const licenses = pgTable("licenses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // How many bot slots this license grants
+  slots: integer("slots").notNull().default(1),
+  // Duration
+  durationDays: integer("duration_days").notNull().default(0),
+  durationHours: integer("duration_hours").notNull().default(0),
+  // Calculated expiration
+  expiresAt: timestamp("expires_at").notNull(),
+  // Status
+  active: text("active").notNull().default("true"),
+  // Reason / note
+  reason: text("reason").notNull().default(""),
+  // Original redeemable key if this came from a key
+  licenseKey: text("license_key").notNull().default(""),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Redeemable license keys - admin generates keys like abeam-key-xxxx, user redeems
+export const licenseKeys = pgTable("license_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: text("key").notNull().unique(),
+  slots: integer("slots").notNull().default(1),
+  durationDays: integer("duration_days").notNull().default(0),
+  durationHours: integer("duration_hours").notNull().default(0),
+  reason: text("reason").notNull().default(""),
+  active: text("active").notNull().default("true"),
+  redeemed: text("redeemed").notNull().default("false"),
+  redeemedBy: uuid("redeemed_by").references(() => users.id),
+  redeemedAt: timestamp("redeemed_at"),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -37,8 +76,8 @@ export const bots = pgTable("bots", {
   beamIp: text("beam_ip").notNull().default("badlion-pvp.xyz"),
   // Discord username to hand out
   discordUser: text("discord_user").notNull().default("stood014"),
-  // Bot Engine: "mineflayer" (Full UI) or "nmp" (Raw Protocol Bypass)
-  engine: text("engine").notNull().default("mineflayer"),
+  // Bot Engine: "azalea" (Rust vanilla client) | "mineflayer" | "nmp"
+  engine: text("engine").notNull().default("azalea"),
   // Beam type: "ai" or "spam"
   beamType: text("beam_type").notNull().default("ai"),
   // Spam message
@@ -80,3 +119,7 @@ export type Bot = typeof bots.$inferSelect;
 export type NewBot = typeof bots.$inferInsert;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type BeamConversation = typeof beamConversations.$inferSelect;
+export type License = typeof licenses.$inferSelect;
+export type NewLicense = typeof licenses.$inferInsert;
+export type LicenseKey = typeof licenseKeys.$inferSelect;
+export type NewLicenseKey = typeof licenseKeys.$inferInsert;

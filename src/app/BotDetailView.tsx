@@ -35,7 +35,22 @@ export default function BotDetailView({
       setStatus(data.status ?? "offline");
       setBeam(data.beam ?? { looping: false, stage: "" });
       if (tab === "console") {
-        setLogs(data.logs ?? []);
+        // Filter noisy azalea logs on client side too (extra safety)
+        const rawLogs = data.logs ?? [];
+        const filtered = rawLogs.filter((l: any) => {
+          const line = (l.line || "").toLowerCase();
+          const bad = [
+            "more than 1,000 items",
+            "packet-event",
+            "error reading packet",
+            "explode (id 36)",
+            "failed to fill whole buffer",
+            "packet explode",
+            "azalea_client::plugins::connection",
+          ];
+          return !bad.some(f => line.includes(f));
+        });
+        setLogs(filtered);
       } else {
         setSnap(data.snapshot ?? { available: false });
       }
@@ -122,6 +137,7 @@ export default function BotDetailView({
             <p className="text-sm font-medium text-slate-400">
               {bot.host}:{bot.port}
               {bot.username && ` · as ${bot.username}`}
+              {bot.engine && ` · ${bot.engine === "azalea" ? "Azalea" : bot.engine === "nmp" ? "NMP" : "Mineflayer"}`}
             </p>
           </div>
         </div>
@@ -164,7 +180,6 @@ export default function BotDetailView({
         </div>
       </div>
 
-      {/* Tabs */}
       {/* Tabs */}
       <div className="flex border-b border-white/5 bg-black/20 px-6">
         <button

@@ -3,20 +3,18 @@ import { bots } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRuntimeView, startBot, resumeEnabledBots } from "@/lib/botManager";
 import { getCurrentUser } from "@/lib/auth";
+import { getUserLicenseStatus, canUserCreateBot } from "@/lib/license";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  // Safety net: ensure enabled bots are resumed even if instrumentation
-  // didn't run (no-op after the first call).
   void resumeEnabledBots();
 
   const user = await getCurrentUser();
   if (!user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
-  // Each user only sees their own bots.
   const rows = await db
     .select()
     .from(bots)
@@ -47,10 +45,14 @@ export async function GET() {
       createdAt: b.createdAt,
     };
   });
+
+  // Use license system - 0 slots by default
+  const licenseStatus = await getUserLicenseStatus(user.id);
   return Response.json({
     bots: data,
-    slots: user.botSlots,
+    slots: licenseStatus.totalSlots,
     used: data.length,
+    licenseStatus,
   });
 }
 
@@ -60,15 +62,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Enforce per-user bot-slot limit.
-  const owned = await db
-    .select({ id: bots.id })
-    .from(bots)
-    .where(eq(bots.userId, user.id));
-  if (owned.length >= user.botSlots) {
+  // Enforce license-based slot limit (0 by default)
+  const check = await canUserCreateBot(user.id);
+  if (!check.allowed) {
     return Response.json(
       {
-        error: `You've used all ${user.botSlots} of your bot slots. Ask an admin for more.`,
+        error: check.reason || "No slots available. Get a license.",
       },
       { status: 403 },
     );
@@ -128,7 +127,10 @@ export async function POST(req: Request) {
   const ytChannel = (body.ytChannel ?? "").trim() || "Alight.z";
   const beamIp = (body.beamIp ?? "").trim() || "badlion-pvp.xyz";
   const discordUser = (body.discordUser ?? "").trim() || "stood014";
-  const engine = (body.engine === "nmp") ? "nmp" : "mineflayer";
+  const engine =
+    body.engine === "nmp" || body.engine === "azalea" || body.engine === "mineflayer"
+      ? body.engine
+      : "azalea";
   const beamType = (body.beamType === "spam") ? "spam" : "ai";
   const spamMessage = (body.spamMessage ?? "").trim() || "join my smp guys /msg me";
   const spamInterval = Number.isFinite(Number(body.spamInterval)) ? Number(body.spamInterval) : 60000;

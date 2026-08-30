@@ -5,6 +5,7 @@ import BotDashboard from "./BotDashboard";
 import AdminPanel from "./AdminPanel";
 import SettingsPanel from "./SettingsPanel";
 import TrainAiPanel from "./TrainAiPanel";
+import LicensePanel from "./LicensePanel";
 import { Logo } from "./Logo";
 
 type Me = {
@@ -17,7 +18,7 @@ type Me = {
   isGuest: boolean;
 };
 
-type Tab = "dashboard" | "admin" | "train" | "settings";
+type Tab = "dashboard" | "license" | "admin" | "train" | "settings";
 
 export default function AppShell() {
   const [me, setMe] = useState<Me | null>(null);
@@ -42,6 +43,32 @@ export default function AppShell() {
   useEffect(() => {
     loadMe();
   }, [loadMe]);
+
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.data?.type === "mcbm:login-success") {
+        loadMe();
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [loadMe]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("login") === "success" && window.opener) {
+      try {
+        window.opener.postMessage({ type: "mcbm:login-success" }, "*");
+      } catch {}
+      window.history.replaceState({}, "", "/");
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch {}
+      }, 400);
+    }
+  }, []);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -71,6 +98,7 @@ export default function AppShell() {
 
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "dashboard", label: "Bots", icon: <BotIcon /> },
+    { key: "license", label: "License", icon: <TicketIcon /> },
     ...(me.role === "admin"
       ? [
           { key: "admin" as Tab, label: "Admin", icon: <ShieldIcon /> },
@@ -82,7 +110,6 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-transform duration-300 lg:translate-x-0 ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
@@ -129,7 +156,6 @@ export default function AppShell() {
           ))}
         </nav>
 
-        {/* User block */}
         <div className="border-t border-slate-800/80 p-3">
           <div className="flex items-center gap-3 rounded-xl bg-slate-900/60 p-3">
             {me.avatar ? (
@@ -152,7 +178,7 @@ export default function AppShell() {
                 )}
               </div>
               <div className="text-[11px] text-slate-500">
-                {me.isGuest ? "guest account" : "discord"}
+                {me.isGuest ? "guest account" : me.username.includes("local:") ? "local" : "discord"}
               </div>
             </div>
           </div>
@@ -165,7 +191,6 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Mobile overlay */}
       {mobileNav && (
         <div
           onClick={() => setMobileNav(false)}
@@ -173,9 +198,7 @@ export default function AppShell() {
         />
       )}
 
-      {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-        {/* Mobile top bar */}
         <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center gap-2">
             <Logo size={28} />
@@ -192,6 +215,7 @@ export default function AppShell() {
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8">
           <div key={tab} className="animate-fade-in">
             {tab === "dashboard" && <BotDashboard />}
+            {tab === "license" && <LicensePanel />}
             {tab === "admin" && me.role === "admin" && (
               <AdminPanel meId={me.id} />
             )}
@@ -213,6 +237,10 @@ function LoginScreen({
 }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   async function devLogin() {
     setBusy(true);
@@ -223,6 +251,33 @@ function LoginScreen({
         body: JSON.stringify({ name }),
       });
       onDevLogin();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function passwordAuth() {
+    setError(null);
+    if (!username.trim() || !password) {
+      setError("Username and password required");
+      return;
+    }
+    setBusy(true);
+    try {
+      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed");
+        return;
+      }
+      onDevLogin();
+    } catch {
+      setError("Network error");
     } finally {
       setBusy(false);
     }
@@ -251,7 +306,65 @@ function LoginScreen({
           </p>
         </div>
 
-        <div className="mt-7 space-y-3">
+        <div className="mt-7 space-y-4">
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="flex gap-1 rounded-xl bg-slate-950 p-1">
+              <button
+                onClick={() => setMode("login")}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${mode === "login" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Login
+              </button>
+              <button
+                onClick={() => setMode("register")}
+                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${mode === "register" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Register
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 outline-none transition focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20"
+              />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && passwordAuth()}
+                placeholder="Password"
+                type="password"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 outline-none transition focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20"
+              />
+              {error && (
+                <div className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-300 ring-1 ring-rose-500/20">
+                  {error}
+                </div>
+              )}
+              <button
+                onClick={passwordAuth}
+                disabled={busy}
+                className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {busy ? "Please wait…" : mode === "login" ? "Login with Username" : "Create Account"}
+              </button>
+              <p className="text-center text-[11px] text-slate-500">
+                {mode === "login" ? "New here? Switch to Register" : "Already have account? Switch to Login"} · First account becomes admin
+              </p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-800" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-slate-900/60 px-2 text-slate-500">or</span>
+            </div>
+          </div>
+
           {discordConfigured ? (
             <a
               href="/api/auth/discord/login"
@@ -263,8 +376,7 @@ function LoginScreen({
           ) : (
             <div className="space-y-3">
               <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-300 ring-1 ring-amber-500/20">
-                Discord OAuth isn&apos;t configured. Use a quick guest login for
-                now:
+                Discord OAuth isn&apos;t configured. Use a quick guest login for now:
               </div>
               <input
                 value={name}
@@ -276,7 +388,7 @@ function LoginScreen({
               <button
                 onClick={devLogin}
                 disabled={busy}
-                className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                className="w-full rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
               >
                 {busy ? "Signing in…" : "Continue as guest"}
               </button>
@@ -285,14 +397,13 @@ function LoginScreen({
         </div>
 
         <p className="mt-6 text-center text-[11px] text-slate-600">
-          Secure session · the first account becomes admin
+          Secure session · local auth for now, will be removed later
         </p>
       </div>
     </div>
   );
 }
 
-/* ---- Icons ---- */
 function DiscordIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -342,6 +453,14 @@ function MenuIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <path d="M3 12h18M3 6h18M3 18h18" />
+    </svg>
+  );
+}
+function TicketIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+      <path d="M13 5v2M13 17v2M13 11v2" />
     </svg>
   );
 }

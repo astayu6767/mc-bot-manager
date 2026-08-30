@@ -1,7 +1,12 @@
 node_modules
 .next
+out
+build
+.git
 .env
-.DS_Store
-*.log
-.vscode
-dist
+.env.*
+*.zip
+pgdata
+Dockerfile
+.dockerignore
+azalea-bridge/target
