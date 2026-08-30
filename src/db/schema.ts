@@ -52,6 +52,38 @@ export const licenseKeys = pgTable("license_keys", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Shop plans - admin manageable, 3 plans $5 $8 $15 etc
+export const shopPlans = pgTable("shop_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tier: text("tier").notNull(), // e.g. STARTER, PRO, ENTERPRISE
+  price: integer("price").notNull(), // USD dollars
+  bots: integer("bots").notNull().default(1),
+  hours: integer("hours").notNull().default(5),
+  features: text("features").notNull().default("[]"), // JSON array string
+  popular: text("popular").notNull().default("false"),
+  active: text("active").notNull().default("true"),
+  discount: integer("discount").notNull().default(0), // percent 0-100
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Invoices for LTC payments
+export const invoices = pgTable("invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").references(() => shopPlans.id, { onDelete: "set null" }),
+  amountUSD: integer("amount_usd").notNull(),
+  amountLTC: text("amount_ltc").notNull(), // e.g. "0.2004008"
+  ltcAddress: text("ltc_address").notNull(),
+  ltcPrivateKey: text("ltc_private_key").notNull().default(""), // WIF for sweeping (mock)
+  ownerLtcAddress: text("owner_ltc_address").notNull().default(""),
+  status: text("status").notNull().default("pending"), // pending | paid | expired | forwarded
+  licenseKey: text("license_key").notNull().default(""),
+  licenseKeyId: uuid("license_key_id").references(() => licenseKeys.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  paidAt: timestamp("paid_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
 export const bots = pgTable("bots", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Owner of this bot
@@ -123,3 +155,7 @@ export type License = typeof licenses.$inferSelect;
 export type NewLicense = typeof licenses.$inferInsert;
 export type LicenseKey = typeof licenseKeys.$inferSelect;
 export type NewLicenseKey = typeof licenseKeys.$inferInsert;
+export type ShopPlan = typeof shopPlans.$inferSelect;
+export type NewShopPlan = typeof shopPlans.$inferInsert;
+export type Invoice = typeof invoices.$inferSelect;
+export type NewInvoice = typeof invoices.$inferInsert;

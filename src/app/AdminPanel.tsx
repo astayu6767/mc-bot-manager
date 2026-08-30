@@ -81,6 +81,19 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("user");
 
+  // Shop management
+  const [shopPlans, setShopPlans] = useState<any[]>([]);
+  const [ownerLtc, setOwnerLtc] = useState("");
+  const [newOwnerLtc, setNewOwnerLtc] = useState("");
+  const [shopInvoices, setShopInvoices] = useState<any[]>([]);
+  const [newPlanTier, setNewPlanTier] = useState("");
+  const [newPlanPrice, setNewPlanPrice] = useState(5);
+  const [newPlanBots, setNewPlanBots] = useState(2);
+  const [newPlanHours, setNewPlanHours] = useState(6);
+  const [newPlanFeatures, setNewPlanFeatures] = useState("");
+  const [newPlanDiscount, setNewPlanDiscount] = useState(0);
+  const [newPlanPopular, setNewPlanPopular] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/users", { cache: "no-store" });
@@ -103,15 +116,40 @@ export default function AdminPanel({ meId }: { meId: string }) {
     } catch {}
   }, []);
 
+  const refreshShop = useCallback(async () => {
+    try {
+      const [plansRes, ownerRes, invRes] = await Promise.all([
+        fetch("/api/shop/plans", { cache: "no-store" }),
+        fetch("/api/shop/settings", { cache: "no-store" }),
+        fetch("/api/shop/invoices", { cache: "no-store" }),
+      ]);
+      if (plansRes.ok) {
+        const d = await plansRes.json();
+        setShopPlans(d.plans || []);
+      }
+      if (ownerRes.ok) {
+        const d = await ownerRes.json();
+        setOwnerLtc(d.ownerLtcAddress || "");
+        if (!newOwnerLtc) setNewOwnerLtc(d.ownerLtcAddress || "");
+      }
+      if (invRes.ok) {
+        const d = await invRes.json();
+        setShopInvoices(d.invoices || []);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     refresh();
     refreshLicenses();
+    refreshShop();
     const t = setInterval(() => {
       refresh();
       refreshLicenses();
-    }, 5000);
+      refreshShop();
+    }, 8000);
     return () => clearInterval(t);
-  }, [refresh, refreshLicenses]);
+  }, [refresh, refreshLicenses, refreshShop]);
 
   async function loadBots(userId: string) {
     if (expanded === userId) {
@@ -859,6 +897,183 @@ export default function AdminPanel({ meId }: { meId: string }) {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Shop Management */}
+      <div className="mt-10">
+        <div className="relative overflow-hidden rounded-[20px] border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.08] via-indigo-500/[0.05] to-slate-900/60 p-[1px]">
+          <div className="rounded-[19px] bg-slate-900/90 backdrop-blur">
+            <div className="flex items-center gap-3 px-6 py-5">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-xl shadow-[0_0_20px_rgba(99,102,241,0.3)]">🛒</div>
+              <div className="flex-1">
+                <h3 className="text-[15px] font-bold tracking-tight text-white">Shop Management</h3>
+                <p className="text-xs text-slate-400">Manage $5 / $8 / $15 plans, discounts, owner LTC address, and invoices</p>
+              </div>
+            </div>
+
+            {/* Owner LTC */}
+            <div className="border-y border-slate-800/60 bg-slate-900/60 px-6 py-4">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Owner&apos;s LTC Address (funds forwarded here)</label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={newOwnerLtc}
+                  onChange={(e) => setNewOwnerLtc(e.target.value)}
+                  placeholder="L..."
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 font-mono text-xs text-white outline-none focus:border-violet-500/50"
+                />
+                <button
+                  disabled={busy}
+                  onClick={async () => {
+                    if (!newOwnerLtc.trim()) return alert("Enter address");
+                    setBusy(true);
+                    try {
+                      const res = await fetch("/api/shop/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerLtcAddress: newOwnerLtc.trim() }) });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error);
+                      setOwnerLtc(data.ownerLtcAddress);
+                      alert("Owner LTC saved");
+                    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                  }}
+                  className="rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-500 disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">Current: <span className="font-mono text-slate-300">{ownerLtc || "not set"}</span> – payments from generated invoice addresses will be forwarded here (simulated, logs in server)</p>
+            </div>
+
+            {/* Plans */}
+            <div className="p-6">
+              <h4 className="text-sm font-semibold text-white">Plans (editable)</h4>
+              <div className="mt-3 grid gap-3">
+                {shopPlans.map((p: any) => (
+                  <div key={p.id} className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-white">{p.tier}</span>
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">${p.price} {p.discount > 0 && `( -${p.discount}% = $${p.finalPrice} )`}</span>
+                      <span className="text-xs text-slate-500">{p.bots} bots / {p.hours}h</span>
+                      {p.popular && <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] text-indigo-300">popular</span>}
+                      <span className={`ml-auto h-2 w-2 rounded-full ${p.active ? "bg-emerald-400" : "bg-slate-600"}`} />
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                      <input type="number" value={p.price} onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, price: v, finalPrice: Math.round(v * (1 - x.discount/100)*100)/100 } : x));
+                      }} className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs" placeholder="price" />
+                      <input type="number" value={p.bots} onChange={(e) => setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, bots: Number(e.target.value) } : x))} className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs" placeholder="bots" />
+                      <input type="number" value={p.hours} onChange={(e) => setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, hours: Number(e.target.value) } : x))} className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs" placeholder="hours" />
+                      <input type="number" value={p.discount} onChange={(e) => setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, discount: Number(e.target.value), finalPrice: Math.round(x.price * (1 - Number(e.target.value)/100)*100)/100 } : x))} className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs" placeholder="discount %" />
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        <input type="checkbox" checked={p.popular} onChange={(e) => setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, popular: e.target.checked } : x))} /> Popular
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        <input type="checkbox" checked={p.active} onChange={(e) => setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, active: e.target.checked } : x))} /> Active
+                      </label>
+                      <button
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          try {
+                            const res = await fetch(`/api/shop/plans/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ price: p.price, bots: p.bots, hours: p.hours, discount: p.discount, popular: p.popular, active: p.active }) });
+                            if (!res.ok) throw new Error((await res.json()).error);
+                          } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                        }}
+                        className="ml-auto rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                      >
+                        Save
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={async () => {
+                          if (!confirm("Delete plan?")) return;
+                          setBusy(true);
+                          try {
+                            await fetch(`/api/shop/plans/${p.id}`, { method: "DELETE" });
+                            setShopPlans(prev => prev.filter(x => x.id !== p.id));
+                          } finally { setBusy(false); }
+                        }}
+                        className="rounded-lg border border-rose-900/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-400"
+                      >
+                        Del
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <h5 className="text-xs font-semibold text-white">Add new plan</h5>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <input value={newPlanTier} onChange={(e) => setNewPlanTier(e.target.value)} placeholder="TIER e.g. PRO" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" />
+                  <input type="number" value={newPlanPrice} onChange={(e) => setNewPlanPrice(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="price $" />
+                  <input type="number" value={newPlanBots} onChange={(e) => setNewPlanBots(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="bots" />
+                  <input type="number" value={newPlanHours} onChange={(e) => setNewPlanHours(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="hours" />
+                  <input type="number" value={newPlanDiscount} onChange={(e) => setNewPlanDiscount(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="discount %" />
+                  <label className="flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" checked={newPlanPopular} onChange={(e) => setNewPlanPopular(e.target.checked)} /> Popular</label>
+                </div>
+                <input value={newPlanFeatures} onChange={(e) => setNewPlanFeatures(e.target.value)} placeholder="Features comma separated e.g. 2 bots, 6h/day, Basic logs" className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" />
+                <button
+                  disabled={busy || !newPlanTier}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      const feats = newPlanFeatures.split(",").map(s => s.trim()).filter(Boolean);
+                      const res = await fetch("/api/shop/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tier: newPlanTier, price: newPlanPrice, bots: newPlanBots, hours: newPlanHours, features: feats, discount: newPlanDiscount, popular: newPlanPopular }) });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error);
+                      setShopPlans(prev => [...prev, { ...data.plan, features: feats, popular: newPlanPopular, active: true, finalPrice: Math.round(newPlanPrice * (1 - newPlanDiscount/100)*100)/100 }]);
+                      setNewPlanTier(""); setNewPlanFeatures("");
+                    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                  }}
+                  className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-500 disabled:opacity-50"
+                >
+                  Add plan
+                </button>
+              </div>
+
+              <div className="mt-6">
+                <h5 className="text-xs font-semibold text-slate-400">Recent invoices (LTC)</h5>
+                <div className="mt-2 max-h-[320px] space-y-2 overflow-auto">
+                  {shopInvoices.length === 0 ? <p className="text-xs text-slate-600">No invoices</p> : shopInvoices.slice(0, 20).map((inv: any) => (
+                    <div key={inv.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px]">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-1.5 w-1.5 rounded-full ${inv.status === "paid" || inv.status === "forwarded" ? "bg-emerald-400" : inv.status === "pending" ? "bg-amber-400 animate-pulse" : "bg-slate-600"}`} />
+                          <span className="font-mono text-slate-300">{inv.ltcAddress.slice(0, 18)}…</span>
+                          <span className="text-slate-500">${inv.amountUSD} ≈ {inv.amountLTC} LTC</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] ${inv.status === "paid" ? "bg-emerald-500/15 text-emerald-300" : inv.status === "pending" ? "bg-amber-500/15 text-amber-300" : "bg-slate-700 text-slate-400"}`}>{inv.status}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-600">{new Date(inv.createdAt).toLocaleString()} · owner → {inv.ownerLtcAddress.slice(0, 16)}… {inv.licenseKey && <span className="text-amber-300">· key {inv.licenseKey.slice(0, 16)}…</span>}</div>
+                      </div>
+                      <div className="ml-2 flex gap-1">
+                        {inv.status === "pending" && (
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              setBusy(true);
+                              try {
+                                const res = await fetch(`/api/shop/invoices/${inv.id}/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forcePaid: true }) });
+                                const data = await res.json();
+                                if (data.paid) alert(`Marked paid, key: ${data.licenseKey}`);
+                                else alert("Not paid yet");
+                              } finally { setBusy(false); }
+                            }}
+                            className="rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300 ring-1 ring-amber-500/20"
+                          >
+                            Force paid
+                          </button>
+                        )}
+                        {inv.licenseKey && <button onClick={() => navigator.clipboard.writeText(inv.licenseKey)} className="rounded bg-slate-800 px-2 py-1 text-[10px]">Copy key</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
