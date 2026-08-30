@@ -165,6 +165,14 @@ class AzaleaHandle extends EventEmitter {
     this.send({ op: "drop" });
   }
 
+  clickWindow(slot: number) {
+    this.send({ op: "clickWindow", slot });
+  }
+
+  closeWindow(_window?: unknown) {
+    this.send({ op: "closeWindow" });
+  }
+
   look(_yaw: number, _pitch: number, _force?: boolean) {
     this.send({ op: "look" });
   }
@@ -352,6 +360,27 @@ export async function startAzaleaBot(
         handle.health = snap.health || 20;
         handle.food = snap.food || 20;
         handle.quickBarSlot = snap.selectedSlot || 0;
+        // Keep heldItem in sync so botManager's use/drop checks work
+        if (snap.heldItem) {
+          handle.heldItem = {
+            name: snap.heldItem,
+            displayName: snap.heldItem,
+            count: 1,
+          };
+        } else {
+          const sel = snap.hotbar?.find((h: any) => h.selected);
+          if (sel?.name) {
+            handle.heldItem = {
+              name: sel.name,
+              displayName: sel.displayName || sel.name,
+              count: sel.count || 1,
+            };
+          } else {
+            handle.heldItem = null;
+          }
+        }
+        // Keep currentWindow reference for close logic
+        handle.currentWindow = snap.window || null;
         break;
       }
       case "end":

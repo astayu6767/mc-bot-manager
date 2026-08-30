@@ -2,7 +2,7 @@
 //!
 //! Protocol (stdin = commands, stdout = events, stderr = tracing):
 //!   first stdin line: {"op":"start","host","port","username","uuid","token","proxy"?}
-//!   later commands:   {"op":"chat"|"disconnect"|"walk"|"jump"|"look"|"select"|"use"|"drop"|"sneak"}
+//!   later commands:   {"op":"chat"|"disconnect"|"walk"|"jump"|"look"|"select"|"use"|"drop"|"sneak"|"closeWindow"|"clickWindow"}
 //!   events:           {"ev":"log"|"chat"|"status"|"error"|"death"|"player_add"|"player_remove"|"snapshot"|"end", ...}
 
 use std::{
@@ -16,6 +16,7 @@ use std::{
 
 use azalea::{
     account::AccountTrait,
+    inventory::{operations::{PickupClick, ThrowClick}, ItemStack, Menu},
     prelude::*,
     protocol::connect::Proxy,
     ClientInformation, JoinOpts,
@@ -152,14 +153,10 @@ fn parse_socks5(raw: &str) -> Option<Proxy> {
         warn!("Azalea only supports SOCKS5; ignoring SOCKS4 proxy");
         return None;
     }
-    // Drop user:pass@ — Proxy::new auth is optional and we don't pull socks5-impl.
     if let Some(at) = rest.rfind('@') {
         rest = &rest[at + 1..];
     }
-    let addr = rest
-        .to_socket_addrs()
-        .ok()
-        .and_then(|mut i| i.next());
+    let addr = rest.to_socket_addrs().ok().and_then(|mut i| i.next());
     match addr {
         Some(addr) => Some(Proxy::new(addr, None)),
         None => {
@@ -181,6 +178,82 @@ fn walk_dir(name: &str) -> azalea::WalkDirection {
     }
 }
 
+fn display_name_from_id(id: &str) -> String {
+    id.split('_')
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn kind_to_names(kind: &azalea_registry::builtin::ItemKind) -> (String, String) {
+    let full = kind.to_string(); // minecraft:stone
+    let name = full
+        .strip_prefix("minecraft:")
+        .unwrap_or(&full)
+        .to_string();
+    let display = display_name_from_id(&name);
+    (name, display)
+}
+
+fn stack_to_json(slot: usize, stack: &ItemStack, selected: bool) -> Value {
+    match stack {
+        ItemStack::Empty => json!({
+            "slot": slot,
+            "name": null,
+            "displayName": null,
+            "count": 0,
+            "selected": selected
+        }),
+        ItemStack::Present(data) => {
+            let (name, display) = kind_to_names(&data.kind);
+            json!({
+                "slot": slot,
+                "name": name,
+                "displayName": display,
+                "count": data.count,
+                "selected": selected
+            })
+        }
+    }
+}
+
+fn menu_title(menu: &Menu) -> String {
+    match menu {
+        Menu::Player(_) => "Player".to_string(),
+        Menu::Generic9x1 { .. } => "Chest".to_string(),
+        Menu::Generic9x2 { .. } => "Chest".to_string(),
+        Menu::Generic9x3 { .. } => "Chest".to_string(),
+        Menu::Generic9x4 { .. } => "Chest".to_string(),
+        Menu::Generic9x5 { .. } => "Chest".to_string(),
+        Menu::Generic9x6 { .. } => "Large Chest".to_string(),
+        Menu::Generic3x3 { .. } => "Dispenser".to_string(),
+        Menu::Crafter3x3 { .. } => "Crafter".to_string(),
+        Menu::Anvil { .. } => "Anvil".to_string(),
+        Menu::Beacon { .. } => "Beacon".to_string(),
+        Menu::BlastFurnace { .. } => "Blast Furnace".to_string(),
+        Menu::BrewingStand { .. } => "Brewing Stand".to_string(),
+        Menu::Crafting { .. } => "Crafting".to_string(),
+        Menu::Enchantment { .. } => "Enchantment".to_string(),
+        Menu::Furnace { .. } => "Furnace".to_string(),
+        Menu::Grindstone { .. } => "Grindstone".to_string(),
+        Menu::Hopper { .. } => "Hopper".to_string(),
+        Menu::Lectern { .. } => "Lectern".to_string(),
+        Menu::Loom { .. } => "Loom".to_string(),
+        Menu::Merchant { .. } => "Villager".to_string(),
+        Menu::ShulkerBox { .. } => "Shulker Box".to_string(),
+        Menu::Smithing { .. } => "Smithing".to_string(),
+        Menu::Smoker { .. } => "Smoker".to_string(),
+        Menu::CartographyTable { .. } => "Cartography".to_string(),
+        Menu::Stonecutter { .. } => "Stonecutter".to_string(),
+    }
+}
+
 fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
     match cmd.op.as_str() {
         "chat" => {
@@ -193,7 +266,7 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
             bot.disconnect();
             bot.exit();
         }
-        "walk" => {
+        "walk" | "move" => {
             let dir = cmd.dir.as_deref().unwrap_or("forward");
             let on = cmd.on.unwrap_or(true);
             if on {
@@ -216,7 +289,6 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
             bot.set_crouching(on);
         }
         "look" => {
-            // Offset look-at a few blocks ahead so the head actually turns.
             let pos = bot.position();
             bot.look_at(azalea::Vec3::new(pos.x + 2.0, pos.y + 1.6, pos.z));
         }
@@ -228,12 +300,33 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
         "use" => {
             bot.start_use_item();
         }
-        "use_stop" => {
-            // Releasing use is handled by the client after the item finishes;
-            // a second start_use_item is a no-op for most items.
-        }
+        "use_stop" => {}
         "drop" => {
-            log_line("system", "Drop is not wired on the Azalea bridge yet.");
+            // Drop entire stack in selected hotbar slot via ThrowClick::All
+            let menu = bot.menu();
+            let hotbar_range = menu.hotbar_slots_range();
+            let selected = bot.selected_hotbar_slot() as usize;
+            let slot_idx = *hotbar_range.start() + selected;
+            let inv = bot.get_inventory();
+            inv.click(ThrowClick::All {
+                slot: slot_idx as u16,
+            });
+            log_line("system", format!("Dropped slot {}", selected));
+        }
+        "clickWindow" => {
+            if let Some(slot) = cmd.slot {
+                let inv = bot.get_inventory();
+                // left click the window slot
+                inv.click(PickupClick::Left {
+                    slot: Some(slot as u16),
+                });
+                log_line("system", format!("Clicked window slot {}", slot));
+            }
+        }
+        "closeWindow" => {
+            let inv = bot.get_inventory();
+            inv.close();
+            log_line("system", "Closed container");
         }
         other => {
             warn!("unknown command op={other}");
@@ -248,18 +341,83 @@ fn facing_from_yaw(yaw_deg: f32) -> &'static str {
 }
 
 fn snapshot(bot: &Client) -> Value {
+    // Position, direction, hunger, health – all infallible in 0.16 docs.rs
     let pos = bot.position();
-    let food = bot.hunger().food as f64;
+    let hunger = bot.hunger();
+    let food = hunger.food as f64;
     let dir = bot.direction();
     let yaw = dir.y_rot() as f64;
     let pitch = dir.x_rot() as f64;
-    let slot = bot.selected_hotbar_slot();
+    let selected = bot.selected_hotbar_slot();
+    let health = bot.health() as f64;
+
+    // Inventory: real hotbar via menu
+    let menu = bot.menu();
+    let all_slots = menu.slots();
+    let hotbar_range = menu.hotbar_slots_range();
+    let hotbar_start = *hotbar_range.start();
+
+    let mut hotbar_json = Vec::with_capacity(9);
+    for i in 0..9 {
+        let idx = hotbar_start + i;
+        let stack = all_slots.get(idx).unwrap_or(&ItemStack::Empty);
+        hotbar_json.push(stack_to_json(i, stack, i as u8 == selected));
+    }
+
+    // Held item
+    let held_stack = bot.get_held_item();
+    let held_json = match &held_stack {
+        ItemStack::Empty => Value::Null,
+        ItemStack::Present(data) => {
+            let (name, _) = kind_to_names(&data.kind);
+            json!(name)
+        }
+    };
+
+    // Window: if not Player menu, show container contents via get_inventory().contents()
+    let window_json = match &menu {
+        Menu::Player(_) => Value::Null,
+        _ => {
+            let inv = bot.get_inventory();
+            let maybe_contents = inv.contents();
+            let title = menu_title(&menu);
+            if let Some(contents) = maybe_contents {
+                let slots: Vec<Value> = contents
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| match s {
+                        ItemStack::Empty => Value::Null,
+                        ItemStack::Present(data) => {
+                            let (name, display) = kind_to_names(&data.kind);
+                            json!({
+                                "slot": i,
+                                "name": name,
+                                "displayName": display,
+                                "count": data.count
+                            })
+                        }
+                    })
+                    .collect();
+                json!({
+                    "title": title,
+                    "slots": slots
+                })
+            } else {
+                // fallback: empty window with title
+                json!({
+                    "title": title,
+                    "slots": []
+                })
+            }
+        }
+    };
+
     json!({
         "ev": "snapshot",
         "available": true,
         "username": bot.username(),
         "position": { "x": pos.x, "y": pos.y, "z": pos.z },
-        "health": 20.0,
+        "health": health,
         "food": food,
         "yaw": yaw,
         "pitch": pitch,
@@ -267,20 +425,14 @@ fn snapshot(bot: &Client) -> Value {
         "dimension": "overworld",
         "timeOfDay": 0,
         "isDay": true,
-        "heldItem": null,
+        "heldItem": held_json,
         "lookingAt": null,
         "entities": [],
         "nearbyBlocks": [],
-        "hotbar": (0..9).map(|i| json!({
-            "slot": i,
-            "name": null,
-            "displayName": null,
-            "count": 0,
-            "selected": i == slot
-        })).collect::<Vec<_>>(),
-        "selectedSlot": slot,
+        "hotbar": hotbar_json,
+        "selectedSlot": selected,
         "using": false,
-        "window": null
+        "window": window_json
     })
 }
 
