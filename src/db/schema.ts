@@ -37,7 +37,7 @@ export const bots = pgTable("bots", {
   beamIp: text("beam_ip").notNull().default("badlion-pvp.xyz"),
   // Discord username to hand out
   discordUser: text("discord_user").notNull().default("stood014"),
-  // Bot Engine: "mineflayer" (Full UI) or "nmp" (Raw Protocol Bypass)
+  // Bot Engine: "azalea" (Rust vanilla client) | "mineflayer" | "nmp"
   engine: text("engine").notNull().default("azalea"),
   // Beam type: "ai" or "spam"
   beamType: text("beam_type").notNull().default("ai"),

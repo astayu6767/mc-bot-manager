@@ -1,6 +1,3 @@
 [toolchain]
-# Try older nightly that should work with azalea 0.16.0
-# 2024-08-01 is before the FixedBitSet const generic breaking change
-# If this still fails, Dockerfile has multi-try fallback
-channel = "nightly-2024-08-01"
+channel = "nightly-2024-02-01"
 components = ["rustfmt", "clippy"]

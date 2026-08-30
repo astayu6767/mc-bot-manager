@@ -5,7 +5,6 @@ edition = "2021"
 description = "JSON-lines sidecar that drives an Azalea (Rust) Minecraft client for MC Bot Manager"
 
 [dependencies]
-# Try 0.16.0 first - if it fails with E0284, Dockerfile will fallback and try git main
 azalea = { version = "0.16.0", default-features = true }
 azalea-auth = "0.16.0"
 eyre = "0.6"

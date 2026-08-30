@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import { EventEmitter } from "events";
+import fs from "fs";
+import path from "path";
 import readline from "readline";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -33,49 +35,15 @@ type Helpers = {
 };
 
 function findAzaleaBinary(): string | null {
-  // Use turbopackIgnore to prevent Turbopack from tracing the entire project
-  // due to filesystem operations. This is the recommended fix for:
-  // "Encountered unexpected file in NFT list"
   const candidates = [
     process.env.AZALEA_BRIDGE_BIN,
     "/usr/local/bin/azalea-bridge",
-    // Scoped to subfolder and marked with turbopackIgnore
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    (() => {
-      try {
-        // Dynamic require to avoid top-level tracing
-        const p = require("path");
-        return p.join(
-          /*turbopackIgnore: true*/ process.cwd(),
-          "azalea-bridge",
-          "target",
-          "release",
-          "azalea-bridge",
-        );
-      } catch {
-        return null;
-      }
-    })(),
-    (() => {
-      try {
-        const p = require("path");
-        return p.join(
-          /*turbopackIgnore: true*/ process.cwd(),
-          "bin",
-          "azalea-bridge",
-        );
-      } catch {
-        return null;
-      }
-    })(),
+    path.join(process.cwd(), "azalea-bridge", "target", "release", "azalea-bridge"),
+    path.join(process.cwd(), "bin", "azalea-bridge"),
   ].filter((s): s is string => Boolean(s));
-
   for (const c of candidates) {
     try {
-      // Use dynamic fs to avoid top-level tracing
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const f = require("fs");
-      if (f.existsSync(c) && f.statSync(c).isFile()) return c;
+      if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
     } catch {
       // ignore
     }

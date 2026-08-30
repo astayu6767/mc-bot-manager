@@ -44,7 +44,9 @@ export const SESSION_MAX_AGE = MAX_AGE;
 
 export const sessionCookieOptions = {
   httpOnly: true,
-  sameSite: "lax" as const,
+  // "none" is required so the session survives when the app is viewed inside
+  // a cross-site embedded preview (e.g. an iframe). Secure is already set.
+  sameSite: "none" as const,
   secure: true,
   path: "/",
   maxAge: MAX_AGE,
