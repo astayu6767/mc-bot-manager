@@ -1056,12 +1056,15 @@ export async function stopBot(id: string): Promise<void> {
   await setDbStatus(id, "offline");
 }
 
-export function sendChat(id: string, message: string): boolean {
-  const rt = runtimes.get(id);
-  if (!rt || !rt.bot || rt.status !== "online") return false;
+// Shared send path used by BOTH the manual console chat and the beam, so
+// beaming sends through the exact same bot.chat(message) call a human uses
+// when typing in the console — with identical logging.
+function sendBotChat(rt: BotRuntime, message: string): boolean {
   try {
     if (typeof rt.bot.chat === "function") {
       rt.bot.chat(message);
+    } else if (rt.bot.write) {
+      rt.bot.write("chat", { message });
     }
     // Accurate logging: detect /msg /w /tell to log as <you → target>
     const msgMatch = message.match(/^\/(msg|w|tell|whisper)\s+([A-Za-z0-9_]{3,16})\s+(.+)$/i);
@@ -1077,6 +1080,12 @@ export function sendChat(id: string, message: string): boolean {
     log(rt, "error", "Failed to send chat: " + (err instanceof Error ? err.message : String(err)));
     return false;
   }
+}
+
+export function sendChat(id: string, message: string): boolean {
+  const rt = runtimes.get(id);
+  if (!rt || !rt.bot || rt.status !== "online") return false;
+  return sendBotChat(rt, message);
 }
 
 export type ViewEntity = {
@@ -1924,8 +1933,7 @@ async function runBeamOnce(
     rt.beamStage = "spamming";
     const msg = record.spamMessage;
     try {
-      bot.chat(msg);
-      log(rt, "chat", `<you → server> ${msg}`);
+      sendBotChat(rt, msg);
       
       // Also save to training DB as a "spam" log
       try {
@@ -2454,48 +2462,25 @@ async function runBeamOnce(
       
       if (isMcpvp) {
         // MCPVP: public chat is duel-local, /msg often disabled
-        try {
-          if (typeof bot.chat === "function") {
-            bot.chat(line);
-          } else if (bot.write) {
-            bot.write("chat", { message: line });
-          }
-          log(rt, "chat", `<you> ${line}`);
-          log(rt, "system", `🔆 Beam: sent public (MCPVP) → \"${line.slice(0,60)}\"`);
-        } catch (e) {
-          log(rt, "error", `public chat failed (MCPVP): ${String(e).slice(0,80)}`);
+        if (sendBotChat(rt, line)) {
+          log(rt, "system", `🔆 Beam: sent public (MCPVP) → "${line.slice(0,60)}"`);
+        } else {
+          log(rt, "error", `public chat failed (MCPVP), trying /msg fallback`);
           // Fallback to /msg
-          try {
-            if (typeof bot.chat === "function") {
-              bot.chat(`/msg ${target} ${line}`);
-              log(rt, "chat", `<you → ${target}> ${line} (fallback)`);
-            }
-          } catch {}
+          sendBotChat(rt, `/msg ${target} ${line}`);
         }
       } else {
         // Minemen / Crystal / others: /msg is reliable
         // We do ONE /msg attempt, log it, and push to history
         // The ackListener will confirm if server accepted it
-        try {
-          lastMsgAck = 0;
-          if (typeof bot.chat === "function") {
-            bot.chat(`/msg ${target} ${line}`);
-          } else if (bot.write) {
-            bot.write("chat", { message: `/msg ${target} ${line}` });
-          }
-          // Log immediately as <you → target> so user sees attempt even before ack
-          log(rt, "chat", `<you → ${target}> ${line}`);
-          log(rt, "system", `🔆 Beam: sent /msg to ${target}: \"${line.slice(0,60)}\"`);
-        } catch (e) {
-          log(rt, "error", `/msg failed for ${target}: ${String(e).slice(0,100)}`);
+        lastMsgAck = 0;
+        if (sendBotChat(rt, `/msg ${target} ${line}`)) {
+          log(rt, "system", `🔆 Beam: sent /msg to ${target}: "${line.slice(0,60)}"`);
+        } else {
+          log(rt, "error", `/msg failed for ${target}, trying public fallback`);
           // Fallback: try public chat as last resort (arena chat visible to opponent in Minemen)
-          try {
-            if (typeof bot.chat === "function") {
-              bot.chat(line);
-              log(rt, "chat", `<you> ${line} (public fallback)`);
-              log(rt, "system", `🔆 Beam: sent public fallback: \"${line.slice(0,60)}\"`);
-            }
-          } catch {}
+          sendBotChat(rt, line);
+          log(rt, "system", `🔆 Beam: sent public fallback: "${line.slice(0,60)}"`);
         }
         
         // Wait 800ms to see if we get ack, but don't block too long
@@ -2560,8 +2545,7 @@ async function runBeamOnce(
     const doLeave = (why: string) => {
       log(rt, "system", `🔆 Beam: ${why} → /leave.`);
       try {
-        bot.chat("/leave");
-        log(rt, "chat", "<you → server> /leave");
+        sendBotChat(rt, "/leave");
       } catch {
         // ignore
       }

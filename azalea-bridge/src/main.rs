@@ -135,6 +135,15 @@ struct State {
     cmds: Arc<Mutex<VecDeque<Cmd>>>,
     walk_until_tick: Arc<Mutex<Option<u32>>>,
     tick: Arc<Mutex<u32>>,
+    /// Live client handle + connection state, so commands can be applied on a
+    /// wall-clock loop instead of only inside `Event::Tick` (which only fires
+    /// while the world is loaded — it stops during proxy server switches, e.g.
+    /// Minemen lobby → duel arena, which used to strand every chat command).
+    client: Arc<Mutex<Option<Client>>>,
+    online: Arc<Mutex<bool>>,
+    last_tick: Arc<Mutex<Option<std::time::Instant>>>,
+    last_stall_report: Arc<Mutex<u64>>,
+    disconnect_times: Arc<Mutex<VecDeque<std::time::Instant>>>,
 }
 
 fn parse_socks5(raw: &str) -> Option<Proxy> {
@@ -461,6 +470,9 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
     match event {
         Event::Init => {
             log_line("system", "Azalea client initialized.");
+            *state.client.lock() = Some(bot.clone());
+            *state.online.lock() = false;
+            *state.last_tick.lock() = None;
             bot.set_client_information(ClientInformation {
                 view_distance: 12,
                 ..Default::default()
@@ -468,6 +480,10 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
         }
         Event::Login => {
             log_line("system", "Logged in to the server.");
+            *state.client.lock() = Some(bot.clone());
+            // Drop commands queued from the previous session so a reconnect
+            // doesn't flush stale chat/messages all at once.
+            state.cmds.lock().clear();
             emit(&json!({ "ev": "status", "status": "online" }));
         }
         Event::Spawn => {
@@ -475,6 +491,9 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
                 "system",
                 format!("✅ Spawned in the world as {} (Azalea / vanilla physics).", bot.username()),
             );
+            *state.client.lock() = Some(bot.clone());
+            *state.online.lock() = true;
+            *state.last_tick.lock() = Some(std::time::Instant::now());
             emit(&json!({ "ev": "status", "status": "online" }));
             emit(&snapshot(&bot));
         }
@@ -485,6 +504,7 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
             }
         }
         Event::Tick => {
+            *state.last_tick.lock() = Some(std::time::Instant::now());
             let tick = {
                 let mut t = state.tick.lock();
                 *t = t.wrapping_add(1);
@@ -496,13 +516,9 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
                     *state.walk_until_tick.lock() = None;
                 }
             }
-            let cmds: Vec<Cmd> = {
-                let mut q = state.cmds.lock();
-                q.drain(..).collect()
-            };
-            for cmd in cmds {
-                apply_cmd(&bot, &state, cmd);
-            }
+            // NOTE: commands are no longer drained here. They are applied by a
+            // dedicated wall-clock task in main() so chat keeps working even
+            // when the world isn't ticking (arena/server switches).
             if tick % 10 == 0 {
                 emit(&snapshot(&bot));
             }
@@ -527,9 +543,36 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
             let text = reason
                 .map(|r| r.to_string())
                 .unwrap_or_else(|| "disconnected".to_string());
-            emit(&json!({ "ev": "error", "line": format!("Disconnected: {text}") }));
-            emit(&json!({ "ev": "end", "line": text }));
-            bot.exit();
+            *state.online.lock() = false;
+            *state.client.lock() = None;
+            *state.last_tick.lock() = None;
+            // Rate-limit reconnects: if we've been kicked 4+ times in the last
+            // 5 minutes, stop retrying and shut down so the dashboard shows a
+            // real error instead of an infinite kick/rejoin loop (e.g. banned).
+            let now = std::time::Instant::now();
+            let too_many = {
+                let mut times = state.disconnect_times.lock();
+                times.push_back(now);
+                while times
+                    .front()
+                    .map_or(false, |f| now.duration_since(*f).as_secs() > 300)
+                {
+                    times.pop_front();
+                }
+                times.len() > 3
+            };
+            if too_many {
+                emit(&json!({ "ev": "error", "line": format!("Disconnected: {text}") }));
+                emit(&json!({ "ev": "end", "line": text }));
+                bot.exit();
+            } else {
+                // reconnect_after is enabled, so azalea will rejoin on its own;
+                // stay alive so chat commands keep queueing for the next session.
+                log_line(
+                    "system",
+                    format!("Disconnected ({text}); auto-reconnecting in a few seconds…"),
+                );
+            }
         }
         Event::ConnectionFailed(err) => {
             let text = format!("Connection failed: {err}");
@@ -634,13 +677,91 @@ async fn main() -> eyre::Result<()> {
         cmds,
         walk_until_tick: Arc::new(Mutex::new(None)),
         tick: Arc::new(Mutex::new(0)),
+        client: Arc::new(Mutex::new(None)),
+        online: Arc::new(Mutex::new(false)),
+        last_tick: Arc::new(Mutex::new(None)),
+        last_stall_report: Arc::new(Mutex::new(0)),
+        disconnect_times: Arc::new(Mutex::new(VecDeque::new())),
     };
+
+    // Command applier: drains the command queue on a wall-clock loop so chat /
+    // movement commands are applied even while the world isn't ticking (proxy
+    // server switches like Minemen lobby → duel arena used to stall Event::Tick
+    // and strand every bot.chat() command in the queue forever).
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                if !*st.online.lock() {
+                    continue;
+                }
+                let client = st.client.lock().clone();
+                if let Some(client) = client {
+                    let cmds: Vec<Cmd> = st.cmds.lock().drain(..).collect();
+                    for cmd in cmds {
+                        apply_cmd(&client, &st, cmd);
+                    }
+                }
+            }
+        });
+    }
+
+    // Watchdog: Event::Tick only fires while the world is loaded. If ticks die
+    // while we're still connected (arena-switch wedge), chat events and
+    // snapshots die with them — force a reconnect so the client recovers
+    // instead of zombifying with no inbound chat and no delivery.
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let connected = st.client.lock().is_some();
+                if !connected {
+                    *st.last_stall_report.lock() = 0;
+                    continue;
+                }
+                let stalled_secs = match st.last_tick.lock().as_ref() {
+                    Some(t) => t.elapsed().as_secs(),
+                    None => 0,
+                };
+                if stalled_secs >= 30 {
+                    if stalled_secs - *st.last_stall_report.lock() >= 30 {
+                        *st.last_stall_report.lock() = stalled_secs;
+                        log_line(
+                            "system",
+                            format!(
+                                "⚠ No world ticks for {stalled_secs}s while connected (stuck after a server switch?) — forcing reconnect to recover chat."
+                            ),
+                        );
+                        let client = st.client.lock().clone();
+                        if let Some(client) = client {
+                            tokio::spawn(async move {
+                                client.disconnect();
+                            });
+                        }
+                    }
+                } else if stalled_secs >= 6 {
+                    let reported = *st.last_stall_report.lock();
+                    if stalled_secs - reported >= 10 {
+                        *st.last_stall_report.lock() = stalled_secs;
+                        log_line(
+                            "system",
+                            format!("World ticks paused for {stalled_secs}s (loading chunks / switching servers)…"),
+                        );
+                    }
+                } else {
+                    *st.last_stall_report.lock() = 0;
+                }
+            }
+        });
+    }
 
     info!("joining {address}");
     ClientBuilder::new()
         .set_handler(handle)
         .set_state(state)
-        .reconnect_after(None)
+        .reconnect_after(Some(std::time::Duration::from_secs(5)))
         .start_with_opts(account, address.as_str(), opts)
         .await;
 

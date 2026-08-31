@@ -292,9 +292,13 @@ export async function startAzaleaBot(
       }
       case "status":
         if (msg.status === "online") {
+          const wasOffline = rt.status !== "online";
           rt.status = "online";
           rt.joined = true;
           rt.lastError = null;
+          // On (re)connect, drop players tracked from the previous session so
+          // beam targeting starts fresh (also fires again after an auto-rejoin).
+          if (wasOffline) rt.nmpPlayers.clear();
           void setDbStatus(record.id, "online");
         }
         break;
