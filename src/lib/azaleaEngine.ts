@@ -51,15 +51,28 @@ function findAzaleaBinary(): string | null {
   return null;
 }
 
-// Filter noisy azalea logs from showing in chatbox/console
+// Filter noisy azalea logs from showing in chatbox/console.
+// NOTE: connection-fatal errors ("error reading packet", "failed to fill whole
+// buffer") are deliberately NOT muted anymore — they're the only visible signal
+// when the azalea client silently dies mid-session (e.g. after a proxy server
+// switch). First occurrence of each distinct line is shown, repeats suppressed.
+const seenAzaleaNoisy = new Set<string>();
+
 function shouldFilterAzaleaLog(line: string): boolean {
   const lower = line.toLowerCase();
+  if (
+    lower.includes("error reading packet") ||
+    lower.includes("failed to fill whole buffer")
+  ) {
+    if (seenAzaleaNoisy.has(line)) return true;
+    if (seenAzaleaNoisy.size > 400) seenAzaleaNoisy.clear();
+    seenAzaleaNoisy.add(line);
+    return false; // let the first one through
+  }
   const filters = [
     "more than 1,000 items",
     "packet-event",
-    "error reading packet",
     "explode (id 36)",
-    "failed to fill whole buffer",
     "packet explode",
     "azalea_client::plugins::connection",
     "explode",

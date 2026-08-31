@@ -93,14 +93,31 @@ function getOrCreateRuntime(id: string): BotRuntime {
   return rt;
 }
 
+// Connection-fatal errors were muted as "noise", but they're exactly what we
+// need to see when a client silently dies mid-session (e.g. azalea stopping
+// packet reads after a proxy server switch). Show the first occurrence of each
+// distinct line, then suppress repeats so the console stays readable.
+const seenNoisyLines = new Set<string>();
+
+function isConnectionFatalLine(lower: string): boolean {
+  return (
+    lower.includes("error reading packet") ||
+    lower.includes("failed to fill whole buffer")
+  );
+}
+
 function shouldFilterLog(line: string): boolean {
   const lower = line.toLowerCase();
+  if (isConnectionFatalLine(lower)) {
+    if (seenNoisyLines.has(line)) return true;
+    if (seenNoisyLines.size > 400) seenNoisyLines.clear();
+    seenNoisyLines.add(line);
+    return false; // let the first occurrence through — it's diagnostic gold
+  }
   const filters = [
     "more than 1,000 items",
     "packet-event",
-    "error reading packet",
     "explode (id 36)",
-    "failed to fill whole buffer",
     "packet explode",
     "azalea_client::plugins::connection",
   ];
@@ -455,6 +472,35 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
       }
     };
 
+    // Raw-packet shims so the beam can join queues (slot 3 + right-click) in
+    // Raw NMP mode — same effect as mineflayer's setQuickBarSlot/activateItem.
+    // NMP survives proxy server switches (lobby → duel arena) natively, so this
+    // is the engine to use for beaming on networks like Minemen.
+    (client as any).setQuickBarSlot = async (slot: number) => {
+      try {
+        client.write("held_item_slot", { slotId: slot });
+      } catch {}
+    };
+    (client as any).activateItem = () => {
+      try {
+        // 1.9+: dedicated use_item packet (empty payload through 1.21.x)
+        client.write("use_item", {});
+      } catch {
+        try {
+          // 1.8.x: right-click is block_place with the "no block" sentinel
+          client.write("block_place", {
+            location: { x: -1, y: -1, z: -1 },
+            direction: 255,
+            heldItem: null,
+            cursorX: -1,
+            cursorY: -1,
+            cursorZ: -1,
+          });
+        } catch {}
+      }
+    };
+    (client as any).deactivateItem = () => {};
+
     client.on("connect", () => log(rt, "system", "TCP connected."));
     client.on("session", () => log(rt, "system", "Session confirmed."));
 
@@ -470,6 +516,11 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
         client.write("settings", { locale: "en_US", viewDistance: 8, chatMode: 0, chatColors: true, skinParts: 0x7f, mainHand: 1, enableTextFiltering: false, allowServerListings: true });
       } catch {}
 
+      // Proxy server switches (lobby → duel arena) re-fire "login" on the same
+      // connection — clear the previous Anti-AFK interval so they don't stack.
+      const prevAfk = (client as any)._antiAfkInterval;
+      if (prevAfk) clearInterval(prevAfk);
+
       let lastAction = 0;
       const actions = [
         () => { try { client.write("entity_action", { entityId: 0, actionId: 0, jumpBoost: 0 }); setTimeout(() => { try { client.write("entity_action", { entityId: 0, actionId: 1, jumpBoost: 0 }); } catch {} }, 300); } catch {} }, // sneak
@@ -484,6 +535,7 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
           lastAction++;
         } catch { clearInterval(antiAfk); }
       }, 15000 + Math.random() * 15000); // 15-30s random interval
+      (client as any)._antiAfkInterval = antiAfk;
     });
 
     // The user's exact chat parsing snippet for NMP
