@@ -11,7 +11,10 @@ use std::{
     io::{self, BufRead, Write},
     net::ToSocketAddrs,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        Arc,
+    },
 };
 
 use azalea::{
@@ -144,6 +147,9 @@ struct State {
     last_tick: Arc<Mutex<Option<std::time::Instant>>>,
     last_stall_report: Arc<Mutex<u64>>,
     disconnect_times: Arc<Mutex<VecDeque<std::time::Instant>>>,
+    /// Set while a worker thread is applying commands; keeps batches ordered
+    /// and prevents piling calls onto a possibly-wedged ECS.
+    applier_busy: Arc<AtomicBool>,
 }
 
 fn parse_socks5(raw: &str) -> Option<Proxy> {
@@ -653,6 +659,7 @@ async fn main() -> eyre::Result<()> {
         last_tick: Arc::new(Mutex::new(None)),
         last_stall_report: Arc::new(Mutex::new(0)),
         disconnect_times: Arc::new(Mutex::new(VecDeque::new())),
+        applier_busy: Arc::new(AtomicBool::new(false)),
     };
 
     // All tasks below run on a LocalSet on this single thread (see the note on
@@ -699,22 +706,77 @@ async fn main() -> eyre::Result<()> {
         });
     }
 
-    // Command applier: drains the command queue on a wall-clock loop so chat /
-    // movement commands are applied even while the world isn't ticking (proxy
-    // server switches like Minemen lobby → duel arena stall Event::Tick).
+    // Command applier, hardened against the world-switch deadlock:
+    //  1. World-switch gating — a Client call (walk/chat) that lands while the
+    //     server is switching worlds (ticks paused) blocks on an ECS lock that
+    //     is held across an await, and on this single-threaded runtime that
+    //     deadlocks the WHOLE process (heartbeat included). So commands are
+    //     only applied while the world is ticking normally (<1.5s tick age);
+    //     otherwise they're held until ticks resume (dropped after 20s).
+    //  2. Off-thread application — even when fresh, commands run on a
+    //     disposable OS thread, so if a call still wedges it kills only that
+    //     worker, never the runtime thread: the heartbeat stays alive and the
+    //     Node supervisor gets a clean zombie detection → restart.
     {
         let st = state.clone();
         local.spawn_local(async move {
+            let mut holding_since: Option<std::time::Instant> = None;
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                 if !*st.online.lock() {
+                    continue; // not spawned yet — commands queue until Spawn
+                }
+                let fresh = st
+                    .last_tick
+                    .lock()
+                    .as_ref()
+                    .map(|t| t.elapsed() < std::time::Duration::from_millis(1500))
+                    .unwrap_or(false);
+                if !fresh {
+                    let mut q = st.cmds.lock();
+                    if q.is_empty() {
+                        holding_since = None;
+                        continue;
+                    }
+                    match holding_since {
+                        None => {
+                            holding_since = Some(std::time::Instant::now());
+                            log_line(
+                                "system",
+                                "World switch in progress — holding commands until ticks resume…",
+                            );
+                        }
+                        Some(t) if t.elapsed().as_secs() >= 20 => {
+                            let n = q.len();
+                            q.clear();
+                            holding_since = None;
+                            log_line(
+                                "system",
+                                format!("Dropped {n} held command(s): world did not resume within 20s."),
+                            );
+                        }
+                        _ => {}
+                    }
                     continue;
                 }
+                holding_since = None;
+                if st.applier_busy.swap(true, AtomicOrdering::SeqCst) {
+                    continue; // previous batch still applying off-thread
+                }
+                let cmds: Vec<Cmd> = st.cmds.lock().drain(..).collect();
                 let client = st.client.lock().clone();
-                if let Some(client) = client {
-                    let cmds: Vec<Cmd> = st.cmds.lock().drain(..).collect();
-                    for cmd in cmds {
-                        apply_cmd(&client, &st, cmd);
+                match client {
+                    Some(client) if !cmds.is_empty() => {
+                        let st2 = st.clone();
+                        std::thread::spawn(move || {
+                            for cmd in cmds {
+                                apply_cmd(&client, &st2, cmd);
+                            }
+                            st2.applier_busy.store(false, AtomicOrdering::SeqCst);
+                        });
+                    }
+                    _ => {
+                        st.applier_busy.store(false, AtomicOrdering::SeqCst);
                     }
                 }
             }
@@ -753,8 +815,13 @@ async fn main() -> eyre::Result<()> {
                         );
                         let client = st.client.lock().clone();
                         if let Some(client) = client {
-                            tokio::task::spawn_local(async move {
-                                client.disconnect();
+                            // Run on a disposable OS thread — disconnect() can
+                            // block on the same ECS lock that wedged the applier,
+                            // and it must never kill the runtime thread (heartbeat).
+                            std::thread::spawn(move || {
+                                let _ = std::panic::catch_unwind(
+                                    std::panic::AssertUnwindSafe(|| client.disconnect()),
+                                );
                             });
                         }
                     }
