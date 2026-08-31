@@ -258,7 +258,16 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
     match cmd.op.as_str() {
         "chat" => {
             if let Some(text) = cmd.text {
+                let is_cmd = text.starts_with('/');
+                // Log what we're sending for debugging beam visibility
+                if is_cmd {
+                    log_line("system", format!("Azalea sending command: {}", text.chars().take(100).collect::<String>()));
+                } else {
+                    log_line("system", format!("Azalea sending chat: {}", text.chars().take(100).collect::<String>()));
+                }
+                // Azalea's chat() handles both signed chat and commands internally
                 bot.chat(text);
+                emit(&json!({ "ev": "log", "level": "system", "line": format!("chat sent: {}", if is_cmd { "cmd" } else { "msg" }) }));
             }
         }
         "disconnect" => {

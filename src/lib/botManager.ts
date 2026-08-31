@@ -1624,7 +1624,7 @@ function findNearestPlayer(rt: BotRuntime, selfName: string): string | null {
   const bot = rt.bot;
   if (!bot) return null;
 
-  // Mineflayer implementation
+  // Mineflayer implementation – try nearest entity first
   if (typeof bot.nearestEntity === "function") {
     try {
       const entity = bot.nearestEntity(
@@ -1667,15 +1667,29 @@ function findNearestPlayer(rt: BotRuntime, selfName: string): string | null {
     }
   }
 
-  // Raw NMP implementation fallback
+  // Azalea & Raw NMP fallback – use nmpPlayers set (populated from player_add events)
+  // This is critical for Azalea where nearestEntity returns null and players map may be incomplete after arena switch
   if (rt.nmpPlayers && rt.nmpPlayers.size > 0) {
     const players = Array.from(rt.nmpPlayers).filter(
       (n) => n.toLowerCase() !== selfName.toLowerCase() && isValidUsername(n),
     );
     if (players.length > 0) {
-      // Pick a random player we've seen since we don't know distances
-      return players[Math.floor(Math.random() * players.length)];
+      // Prefer the most recently added player (last in set) as it's likely the opponent in duel
+      // For duel matches, opponent is usually the last player added after match start
+      return players[players.length - 1];
     }
+  }
+
+  // Final fallback: check bot.players even for Azalea (in case nmpPlayers empty)
+  try {
+    const playerNames = Object.keys(bot.players || {}).filter(
+      (n) => isValidUsername(n) && n.toLowerCase() !== selfName.toLowerCase(),
+    );
+    if (playerNames.length > 0) {
+      return playerNames[playerNames.length - 1];
+    }
+  } catch {
+    // ignore
   }
 
   return null;
@@ -1693,35 +1707,57 @@ function escapeRegex(s: string): string {
 // "X -> me: msg".
 function parseWhisperFrom(line: string, target: string): string | null {
   const t = escapeRegex(target);
+  const clean = line.replace(/\u00A7./g, "").trim();
   const patterns: RegExp[] = [
-    new RegExp(`\\(from ${t}\\)\\s*:?\\s*(.+)`, "i"),
-    new RegExp(`^\\s*from ${t}\\s*:?\\s*(.+)`, "i"),
-    new RegExp(`^\\s*${t}\\s+whispers(?:\\s+to\\s+you)?\\s*:?\\s*(.+)`, "i"),
-    new RegExp(`^\\s*${t}\\s*->\\s*me\\s*:?\\s*(.+)`, "i"),
+    new RegExp(`\\(from\\s+(?:\\[[^\\]]+\\]\\s*)?${t}\\)\\s*:?\\s*(.+)`, "i"),
+    new RegExp(`^\\s*from\\s+(?:\\[[^\\]]+\\]\\s*)?${t}\\s*:?\\s*(.+)`, "i"),
+    new RegExp(`^\\s*(?:\\[[^\\]]+\\]\\s*)?${t}\\s+whispers(?:\\s+to\\s+you)?\\s*:?\\s*(.+)`, "i"),
+    new RegExp(`^\\s*(?:\\[[^\\]]+\\]\\s*)?${t}\\s*(?:->|\u2192|\u00BB|>)\\s*(?:me|you)\\s*:?\\s*(.+)`, "i"),
+    new RegExp(`\\bfrom\\b[^:]*\\b${t}\\b[^:]*:\\s*(.+)`, "i"),
+    new RegExp(`\\bfrom\\s+${t}\\b\\s*[:\uFF1A]\\s*(.+)`, "i"),
+    new RegExp(`^\\s*\\[W\\]\\s*${t}\\s*:\\s*(.+)`, "i"),
   ];
   for (const re of patterns) {
-    const m = line.match(re);
+    const m = clean.match(re);
     if (m && m[1]) return m[1].trim();
   }
   return null;
 }
 
-// Detect a PUBLIC chat message from the target player, e.g.:
-//   "Kotofey52: no bro"
-//   "[MVP] Kotofey52: yo"
-//   "✦ [✽] Kotofey52 |I| rank: msg"
-// Returns the message text, or null if this line isn't the target talking.
 function parsePublicChatFrom(line: string, target: string): string | null {
   const t = escapeRegex(target);
-  // The username, possibly with rank tags/symbols before it, then ": message".
-  // We require the target name to appear immediately before the first " :".
-  const re = new RegExp(`(?:^|[^a-z0-9_])${t}\\b[^:]*:\\s*(.+)$`, "i");
-  const m = line.match(re);
-  if (!m || !m[1]) return null;
-  const msg = m[1].trim();
-  // Guard against false positives from server/system lines.
-  if (!msg) return null;
-  return msg;
+  const clean = line.replace(/\u00A7./g, "").trim();
+  const patterns: RegExp[] = [
+    new RegExp(`(?:^|[^a-zA-Z0-9_])${t}\\b[^:\u00BB>\u2192]*:\\s*(.+)$`, "i"),
+    new RegExp(`(?:^|[^a-zA-Z0-9_])${t}\\b[^:\u00BB>\u2192]*[\u00BB>\u2192]\\s*(.+)$`, "i"),
+    new RegExp(`\\b${t}\\b.*?[»:\u00BB>\u2192:]\\s*(.+)$`, "i"),
+  ];
+  for (const re of patterns) {
+    const m = clean.match(re);
+    if (m && m[1]) {
+      const msg = m[1].trim();
+      if (!msg) continue;
+      if (/^(?:map|ping|opponent|winner|loser|searching|casual|ranked)/i.test(msg)) continue;
+      if (msg.length > 0 && msg.length <= 256) return msg;
+    }
+  }
+  return null;
+}
+
+function parseAnyChatFrom(line: string, target: string): string | null {
+  const clean = line.replace(/\u00A7./g, "").trim();
+  const low = clean.toLowerCase();
+  const tLow = target.toLowerCase();
+  if (!low.includes(tLow)) return null;
+  if (low.includes("opponent:") || low.includes("map:") || low.includes("ping:") || low.includes("winner:") || low.includes("loser:")) return null;
+  const idx = low.indexOf(tLow);
+  const after = clean.slice(idx + target.length).trim();
+  const sepMatch = after.match(/^[^A-Za-z0-9_]*[»:\u00BB>\u2192]\s*(.+)$/) || after.match(/^[^A-Za-z0-9_]*:\s*(.+)$/);
+  if (sepMatch && sepMatch[1]) {
+    const msg = sepMatch[1].trim();
+    if (msg && msg.length >= 1 && msg.length <= 256) return msg;
+  }
+  return null;
 }
 
 // Conversational AI via OpenRouter API. Returns intent + an in-character reply.
@@ -1993,42 +2029,89 @@ async function runBeamOnce(
   let matchStarted = false;
   let opponentFromChat: string | null = null;
   const matchStartListener = (msg: any) => {
-    // Strip color codes AND zero-width spaces/invisible characters
-    const txt = String(msg).replace(/[\u00A7\u200B-\u200D\uFEFF]/g, ""); 
+    // Strip color codes AND zero-width spaces/invisible characters and common symbols like ●
+    const rawTxt = String(msg);
+    const txt = rawTxt.replace(/[\u00A7\u200B-\u200D\uFEFF●•]/g, " ").replace(/\s+/g, " ").trim();
     const low = txt.toLowerCase();
-    if (low.includes("match started")) matchStarted = true;
-    
-    // Listen for the exact opponent name in the queue text
-    // The chat often has bullets (●) or other symbols before it.
-    const oppMatch = txt.match(/Opponent[^\w]*([A-Za-z0-9_]{3,16})/i);
-    if (oppMatch && oppMatch[1]) {
-      // Validate the extracted name
-      const potentialName = oppMatch[1].trim();
-      if (isValidUsername(potentialName) && potentialName.toLowerCase() !== self.toLowerCase()) {
-        opponentFromChat = potentialName;
-        log(rt, "system", `🔆 Beam: Chat extracted target → ${opponentFromChat}`);
+    if (low.includes("match started") || low.includes("duel started") || low.includes("fight started") || low.includes("game started")) matchStarted = true;
+    if (low.includes("vs ") || low.includes("versus") || low.includes("fighting") || low.includes("dueling")) {
+      // Some servers show "You vs PLAYER" or "Fighting PLAYER"
+      const vsMatch = txt.match(/(?:vs\.?|versus|fighting|dueling|against)\s+(?:\[[^\]]+\]\s*)?([A-Za-z0-9_]{3,16})/i);
+      if (vsMatch && vsMatch[1] && isValidUsername(vsMatch[1]) && vsMatch[1].toLowerCase() !== self.toLowerCase()) {
+        opponentFromChat = vsMatch[1].trim();
+        log(rt, "system", `🔆 Beam: Chat extracted target (vs) → ${opponentFromChat}`);
       }
     }
+    // Listen for the exact opponent name in the queue text
+    // The chat often has bullets (●) or other symbols before it.
+    // More robust: if line contains "Opponent", extract all valid usernames and pick last valid one
+    if (low.includes("opponent")) {
+      // First try original regex
+      const oppMatch = txt.match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
+      if (oppMatch && oppMatch[1] && isValidUsername(oppMatch[1]) && oppMatch[1].toLowerCase() !== self.toLowerCase()) {
+        opponentFromChat = oppMatch[1].trim();
+        log(rt, "system", `🔆 Beam: Chat extracted target → ${opponentFromChat}`);
+      } else {
+        // Fallback: extract all usernames from line and pick last valid that isn't self
+        const allNames = txt.match(/[A-Za-z0-9_]{3,16}/g) || [];
+        // Filter out common words like Opponent, Map, Ping, etc.
+        const filtered = allNames.filter(n => {
+          const l = n.toLowerCase();
+          if (["opponent","map","ping","searching","match","casual","ranked","meadows","crystal","winner","loser"].includes(l)) return false;
+          return isValidUsername(n) && l !== self.toLowerCase();
+        });
+        if (filtered.length > 0) {
+          opponentFromChat = filtered[filtered.length - 1];
+          log(rt, "system", `🔆 Beam: Chat extracted target (fallback) → ${opponentFromChat} from \"${txt.slice(0,80)}\"`);
+        }
+      }
+    }
+    // Also handle Minemen style: "Opponent: Fran1oPL" might be split – if we see a username after opponent line, capture
+    // If txt looks like just a username and previous line had Opponent, we already handled via fallback
   };
   
   // On MCPVP, there is no "Match started!" message. Instead, the server
   // transfers you to a duel instance, which fires a 'login' or 'respawn' packet.
+  // FIX: Any server transfer (BungeeCord) should count as match started, not just MCPVP
+  // On Minemen/MCPVP/Crystal, joining arena often triggers a dimension change or login packet
   const serverTransferListener = () => {
-    if (record.host.toLowerCase().includes("mcpvp")) {
-      matchStarted = true;
-    }
+    // If we've already waited a bit and get a transfer, treat as match start
+    matchStarted = true;
+    log(rt, "system", "🔆 Beam: server transfer detected → match started");
+  };
+  const respawnListener = () => {
+    matchStarted = true;
+    log(rt, "system", "🔆 Beam: respawn detected → match started");
   };
 
   bot.on("messagestr", matchStartListener);
-  if (bot._client) bot._client.on("login", serverTransferListener);
+  // Listen to multiple possible transfer signals
+  if (bot._client) {
+    bot._client.on("login", serverTransferListener);
+    try { bot._client.on("respawn", respawnListener); } catch {}
+  }
+  try {
+    // mineflayer also emits spawn after transfer
+    bot.on("spawn", serverTransferListener);
+  } catch {}
+  // Azalea emits status online again after transfer – we already handle via messagestr
   
   const waitStart = Date.now();
-  // Wait up to 15 seconds for the match to start
-  while (!matchStarted && Date.now() - waitStart < 15000 && rt.beamLoop) {
+  // Wait up to 20 seconds for the match to start (increased from 15)
+  while (!matchStarted && Date.now() - waitStart < 20000 && rt.beamLoop) {
     await sleep(500);
   }
+  // If still not started, log and proceed anyway – opponent might already be visible
+  if (!matchStarted) {
+    log(rt, "system", "🔆 Beam: match start timeout, proceeding anyway");
+    matchStarted = true;
+  }
   bot.removeListener("messagestr", matchStartListener);
-  if (bot._client) bot._client.removeListener("login", serverTransferListener);
+  if (bot._client) {
+    bot._client.removeListener("login", serverTransferListener);
+    try { bot._client.removeListener("respawn", respawnListener); } catch {}
+  }
+  try { bot.removeListener("spawn", serverTransferListener); } catch {}
   if (!rt.beamLoop) return "stopped";
 
   // 1s pause after match starts to let the player fully un-vanish, then walk forward
@@ -2096,35 +2179,39 @@ async function runBeamOnce(
   bot.on("playerLeft", onPlayerLeft);
 
   // Persistent reply capture: whispers FROM target OR target's public chat.
+  // FIX: listen to multiple event types and handle many chat formats (» for Minemen, → for MCPVP, etc.)
   const inbox: string[] = [];
-  const onMsg = (message: string) => {
-    const raw = String(message);
+  const onMsg = (message: any) => {
+    // Handle both string (messagestr) and object (chat event with username/message)
+    let raw = "";
+    if (typeof message === "string") raw = message;
+    else if (message && typeof message === "object") {
+      // mineflayer chat event: (username, message) or {username, message}
+      if (typeof message.text === "string") raw = message.text;
+      else if (typeof message.message === "string") raw = message.message;
+      else if (Array.isArray(message) && message.length >= 2) raw = `${message[0]}: ${message[1]}`;
+      else raw = String(message);
+    } else raw = String(message);
+    if (!raw) return;
     const low = raw.toLowerCase();
 
     // --- Match Results detection (the reliable death/leave signal) ---
-    // e.g. "🏆 Winner: mxtzzee_  ▏  ☠ Loser: karam_4"
     if (low.includes("winner:") && low.includes("loser:")) {
       const winMatch = raw.match(/winner\s*:\s*([A-Za-z0-9_]+)/i);
       const loseMatch = raw.match(/loser\s*:\s*([A-Za-z0-9_]+)/i);
       const winner = winMatch?.[1]?.toLowerCase();
       const loser = loseMatch?.[1]?.toLowerCase();
       if (loser === self.toLowerCase()) {
-        // We lost the duel → we were killed.
         died = true;
         log(rt, "system", "🔆 Beam: match results show I was killed.");
       } else if (winner === self.toLowerCase()) {
-        // Opponent lost → they died/left.
         log(rt, "system", "🔆 Beam: match results show opponent died/left.");
-        // If the opponent was our target, treat them as gone.
         if (loser && loser === target.toLowerCase()) targetLeft = true;
       }
       return;
     }
 
-    // "X was killed by Y" style lines.
-    const killMatch = raw.match(
-      /([A-Za-z0-9_]+)\s+was killed by\s+([A-Za-z0-9_]+)/i,
-    );
+    const killMatch = raw.match(/([A-Za-z0-9_]+)\s+was killed by\s+([A-Za-z0-9_]+)/i);
     if (killMatch) {
       const victim = killMatch[1].toLowerCase();
       if (victim === self.toLowerCase()) {
@@ -2138,54 +2225,106 @@ async function runBeamOnce(
       }
     }
 
-    // Leave / disconnect detection.
     if (
       low.includes(target.toLowerCase()) &&
-      (low.includes("disconnected") || low.includes("left the game"))
+      (low.includes("disconnected") || low.includes("left the game") || low.includes("left the match") || low.includes("has left"))
     ) {
       targetLeft = true;
       return;
     }
 
-    // Whisper from the target (private).
+    // Whisper from the target (private) – try all formats
     const whisper = parseWhisperFrom(raw, target);
     if (whisper) {
+      log(rt, "system", `🔆 Beam: got whisper from ${target}: \"${whisper.slice(0,80)}\"`);
       inbox.push(whisper);
       return;
     }
-    // Public chat from the target (e.g. "Kotofey52: no bro").
+    // Public chat from the target
     const pub = parsePublicChatFrom(raw, target);
     if (pub) {
+      log(rt, "system", `🔆 Beam: got public from ${target}: \"${pub.slice(0,80)}\"`);
       inbox.push(pub);
+      return;
+    }
+    // Fallback: any chat containing target name
+    const any = parseAnyChatFrom(raw, target);
+    if (any) {
+      log(rt, "system", `🔆 Beam: got fallback from ${target}: \"${any.slice(0,80)}\"`);
+      inbox.push(any);
+      return;
     }
   };
+  // FIX: Keep references to chat listeners so we can remove them properly
+  const onChatMineflayer = (username: string, message: string) => {
+    if (!username || !message) return;
+    if (username.toLowerCase() === self.toLowerCase()) return;
+    onMsg(`${username}: ${message}`);
+  };
+  // Listen to multiple events to ensure we don't miss chat after arena switch
   bot.on("messagestr", onMsg);
+  // For mineflayer bots, also listen to chat event (username, message)
+  try {
+    bot.on("chat", onChatMineflayer);
+  } catch {}
 
   const history: { who: "me" | "them"; text: string }[] = [];
 
   const whisper = async (line: string, gap = SEND_GAP) => {
+    const isMcpvp = record.host.toLowerCase().includes("mcpvp");
     try {
-      if (record.host.toLowerCase().includes("mcpvp")) {
-        // On mcpvp, we are usually in isolated duel instances where public chat is safe and /msg is disabled
+      // FIX: Always send public chat so it's visible in normal chat, AND try /msg for privacy.
+      // On MCPVP, public chat is isolated to duel, so it's safe. On Crystal/Minemen, public also works.
+      // For Azalea: bot.chat sends JSON {op:"chat",text} which calls bot.chat(text) in Rust – handles both chat and commands.
+      // For Mineflayer: bot.chat handles signing.
+      // For NMP: custom client.chat writes correct packet.
+      if (isMcpvp) {
+        // MCPVP duel arenas: public chat only (msg disabled often)
         if (typeof bot.chat === "function") {
           bot.chat(line);
         } else if (bot.write) {
           bot.write("chat", { message: line });
         }
         log(rt, "chat", `<you> ${line}`);
+        // Also try /msg as backup if allowed
+        try {
+          await sleep(250);
+          if (typeof bot.chat === "function") bot.chat(`/msg ${target} ${line}`);
+        } catch {}
       } else {
-        if (typeof bot.chat === "function") {
-          bot.chat(`/msg ${target} ${line}`);
-        } else if (bot.write) {
-          bot.write("chat", { message: `/msg ${target} ${line}` });
-        }
-        log(rt, "chat", `<you → ${target}> ${line}`);
+        // Minemen / Crystal / others: send PUBLIC first for visibility, then private /msg
+        // Public ensures "any msg wasn't send to normal chat" is fixed
+        try {
+          if (typeof bot.chat === "function") {
+            bot.chat(line);
+          } else if (bot.write) {
+            bot.write("chat", { message: line });
+          }
+          log(rt, "chat", `<you> ${line}`);
+        } catch {}
+        await sleep(300);
+        // Then private whisper
+        try {
+          if (typeof bot.chat === "function") {
+            bot.chat(`/msg ${target} ${line}`);
+          } else if (bot.write) {
+            bot.write("chat", { message: `/msg ${target} ${line}` });
+          }
+          log(rt, "chat", `<you → ${target}> ${line}`);
+        } catch {}
+        // Also try /w alias and /tell as fallback (some servers use different aliases)
+        try {
+          await sleep(200);
+          if (typeof bot.chat === "function") {
+            // don't double log, just attempt
+            bot.chat(`/w ${target} ${line}`);
+          }
+        } catch {}
       }
       history.push({ who: "me", text: line });
-    } catch {
-      // ignore
+    } catch (e) {
+      log(rt, "error", `whisper send failed: ${String(e).slice(0,120)}`);
     }
-    // Human-like variance so message timing never looks robotic.
     await sleep(humanGap(gap, 0.22));
   };
 
@@ -2467,6 +2606,8 @@ async function runBeamOnce(
     return outcome;
   } finally {
     bot.removeListener("messagestr", onMsg);
+    try { bot.removeListener("chat", onChatMineflayer); } catch {}
+    try { bot.removeListener("chat", onMsg); } catch {}
     bot.removeListener("death", onDeath);
     bot.removeListener("playerLeft", onPlayerLeft);
     try {
