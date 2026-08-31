@@ -1063,7 +1063,15 @@ export function sendChat(id: string, message: string): boolean {
     if (typeof rt.bot.chat === "function") {
       rt.bot.chat(message);
     }
-    log(rt, "chat", `<you> ${message}`);
+    // Accurate logging: detect /msg /w /tell to log as <you → target>
+    const msgMatch = message.match(/^\/(msg|w|tell|whisper)\s+([A-Za-z0-9_]{3,16})\s+(.+)$/i);
+    if (msgMatch) {
+      const target = msgMatch[2];
+      const content = msgMatch[3];
+      log(rt, "chat", `<you → ${target}> ${content}`);
+    } else {
+      log(rt, "chat", `<you> ${message}`);
+    }
     return true;
   } catch (err) {
     log(rt, "error", "Failed to send chat: " + (err instanceof Error ? err.message : String(err)));
@@ -2072,50 +2080,106 @@ async function runBeamOnce(
   
   // On MCPVP, there is no "Match started!" message. Instead, the server
   // transfers you to a duel instance, which fires a 'login' or 'respawn' packet.
-  // FIX: Any server transfer (BungeeCord) should count as match started, not just MCPVP
-  // On Minemen/MCPVP/Crystal, joining arena often triggers a dimension change or login packet
+  // FIX: Only MCPVP uses BungeeCord transfer as match start signal.
+  // For Minemen/Crystal, we must wait for explicit "Match started!" message,
+  // otherwise we miss the Opponent: line that comes during countdown.
+  const isMcpvp = record.host.toLowerCase().includes("mcpvp");
   const serverTransferListener = () => {
-    // If we've already waited a bit and get a transfer, treat as match start
-    matchStarted = true;
-    log(rt, "system", "🔆 Beam: server transfer detected → match started");
+    if (isMcpvp) {
+      matchStarted = true;
+      log(rt, "system", "🔆 Beam: MCPVP server transfer detected → match started");
+    }
   };
   const respawnListener = () => {
-    matchStarted = true;
-    log(rt, "system", "🔆 Beam: respawn detected → match started");
+    if (isMcpvp) {
+      matchStarted = true;
+      log(rt, "system", "🔆 Beam: MCPVP respawn detected → match started");
+    }
   };
 
   bot.on("messagestr", matchStartListener);
-  // Listen to multiple possible transfer signals
-  if (bot._client) {
-    bot._client.on("login", serverTransferListener);
-    try { bot._client.on("respawn", respawnListener); } catch {}
+  // Listen to transfer signals only for MCPVP
+  if (isMcpvp) {
+    if (bot._client) {
+      bot._client.on("login", serverTransferListener);
+      try { bot._client.on("respawn", respawnListener); } catch {}
+    }
+    try {
+      bot.on("spawn", serverTransferListener);
+    } catch {}
   }
-  try {
-    // mineflayer also emits spawn after transfer
-    bot.on("spawn", serverTransferListener);
-  } catch {}
-  // Azalea emits status online again after transfer – we already handle via messagestr
   
   const waitStart = Date.now();
-  // Wait up to 20 seconds for the match to start (increased from 15)
-  while (!matchStarted && Date.now() - waitStart < 20000 && rt.beamLoop) {
+  // Wait up to 25 seconds for the match to start (Minemen can be slow)
+  while (!matchStarted && Date.now() - waitStart < 25000 && rt.beamLoop) {
     await sleep(500);
   }
-  // If still not started, log and proceed anyway – opponent might already be visible
   if (!matchStarted) {
     log(rt, "system", "🔆 Beam: match start timeout, proceeding anyway");
     matchStarted = true;
   }
+  // Keep matchStartListener active for a bit longer to catch late Opponent: messages
+  // Don't remove immediately – let it run 3 more seconds after match start
+  await sleep(1500);
   bot.removeListener("messagestr", matchStartListener);
-  if (bot._client) {
-    bot._client.removeListener("login", serverTransferListener);
-    try { bot._client.removeListener("respawn", respawnListener); } catch {}
+  if (isMcpvp) {
+    if (bot._client) {
+      bot._client.removeListener("login", serverTransferListener);
+      try { bot._client.removeListener("respawn", respawnListener); } catch {}
+    }
+    try { bot.removeListener("spawn", serverTransferListener); } catch {}
   }
-  try { bot.removeListener("spawn", serverTransferListener); } catch {}
   if (!rt.beamLoop) return "stopped";
 
-  // 1s pause after match starts to let the player fully un-vanish, then walk forward
-  await sleep(1000);
+  // CRITICAL FIX: Clear nmpPlayers when match starts, so we only consider players in arena
+  // Previously, nmpPlayers contained lobby players like 1Alphaa1, causing wrong target
+  try {
+    if (rt.nmpPlayers) {
+      log(rt, "system", `🔆 Beam: clearing nmpPlayers (had ${rt.nmpPlayers.size} players) for fresh arena detection`);
+      rt.nmpPlayers.clear();
+    }
+  } catch {}
+  
+  // FIX: Minemen has 5..1 countdown where chat may be blocked and players vanished
+  // Wait 5s to let countdown finish and arena fully load, then clear and wait for player_add
+  // During this wait, keep a chat logger active so we don't miss opponent extraction or inbound chat
+  const countdownLogger = (msg: any) => {
+    const raw = String(msg);
+    const low = raw.toLowerCase();
+    // Try to extract opponent during countdown if we missed it
+    if (low.includes("opponent") && !opponentFromChat) {
+      const m = raw.replace(/§./g, " ").match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
+      if (m && m[1] && isValidUsername(m[1]) && m[1].toLowerCase() !== self.toLowerCase()) {
+        opponentFromChat = m[1].trim();
+        log(rt, "system", `🔆 Beam: countdown extracted opponent → ${opponentFromChat}`);
+      }
+    }
+    // Log interesting chat during countdown
+    if (raw.includes("»") || raw.includes(":") || low.includes("vs ") || low.includes("match")) {
+      log(rt, "system", `🔆 Beam countdown chat: ${raw.slice(0,120)}`);
+    }
+  };
+  bot.on("messagestr", countdownLogger);
+  log(rt, "system", "🔆 Beam: waiting 5s for countdown/arena to finish...");
+  await sleep(5000);
+  bot.removeListener("messagestr", countdownLogger);
+  // After countdown, clear again in case lobby players re-added during transfer
+  try {
+    if (rt.nmpPlayers && rt.nmpPlayers.size > 0) {
+      log(rt, "system", `🔆 Beam: post-countdown nmpPlayers has ${rt.nmpPlayers.size}: ${Array.from(rt.nmpPlayers).slice(0,5).join(",")}`);
+      // Don't clear if we already have opponent? Actually clear if size > 1 and doesn't contain opponentFromChat
+      if (!opponentFromChat || !rt.nmpPlayers.has(opponentFromChat)) {
+        // Keep only opponentFromChat if we have it, else clear
+        if (opponentFromChat && isValidUsername(opponentFromChat)) {
+          const opp = opponentFromChat;
+          rt.nmpPlayers.clear();
+          rt.nmpPlayers.add(opp);
+          log(rt, "system", `🔆 Beam: kept only opponent ${opp} in nmpPlayers`);
+        }
+      }
+    }
+  } catch {}
+  
   rt.beamStage = "walking forward";
   log(rt, "system", "🔆 Beam: walking forward 2s.");
   try {
@@ -2140,6 +2204,41 @@ async function runBeamOnce(
   if (!rt.beamLoop) return "stopped";
 
   // Use the chat-extracted opponent if we found it! Otherwise fallback to scanning players.
+  // BACKUP: Scan recent logs for Opponent: in case matchStartListener missed it due to timing
+  if (!opponentFromChat) {
+    try {
+      // Scan last 30 logs for opponent
+      const recentLogs = rt.logs.slice(-40);
+      for (let i = recentLogs.length - 1; i >= 0; i--) {
+        const line = recentLogs[i].line;
+        const clean = line.replace(/[\u00A7\u200B-\u200D\uFEFF●•]/g, " ").replace(/\s+/g, " ").trim();
+        if (clean.toLowerCase().includes("opponent")) {
+          const m = clean.match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
+          if (m && m[1] && isValidUsername(m[1]) && m[1].toLowerCase() !== self.toLowerCase()) {
+            const lower = m[1].toLowerCase();
+            if (!["map","ping","searching","match","casual","ranked","meadows","crystal","winner","loser"].includes(lower)) {
+              opponentFromChat = m[1].trim();
+              log(rt, "system", `🔆 Beam: recovered opponent from logs → ${opponentFromChat}`);
+              break;
+            }
+          }
+          // Fallback: extract all usernames
+          const all = clean.match(/[A-Za-z0-9_]{3,16}/g) || [];
+          const filtered = all.filter(n => {
+            const l = n.toLowerCase();
+            if (["opponent","map","ping","searching","match","casual","ranked","meadows","crystal","winner","loser","tournament","host","mode","players","starting","click","join"].includes(l)) return false;
+            return isValidUsername(n) && l !== self.toLowerCase();
+          });
+          if (filtered.length > 0) {
+            opponentFromChat = filtered[filtered.length - 1];
+            log(rt, "system", `🔆 Beam: recovered opponent from logs (fallback) → ${opponentFromChat}`);
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+
   let target = opponentFromChat || findNearestPlayer(rt, self);
   let retries = 5;
   while (!target && retries > 0 && rt.beamLoop) {
@@ -2179,8 +2278,50 @@ async function runBeamOnce(
   bot.on("playerLeft", onPlayerLeft);
 
   // Persistent reply capture: whispers FROM target OR target's public chat.
-  // FIX: listen to multiple event types and handle many chat formats (» for Minemen, → for MCPVP, etc.)
   const inbox: string[] = [];
+  
+  // Debug logger for ALL chat during beam – helps diagnose why messages not received
+  const debugChatLogger = (message: any) => {
+    let raw = "";
+    if (typeof message === "string") raw = message;
+    else if (message && typeof message === "object") {
+      if (typeof message.text === "string") raw = message.text;
+      else if (typeof message.message === "string") raw = message.message;
+      else raw = String(message);
+    } else raw = String(message);
+    if (!raw) return;
+    if (raw.includes("<you") || raw.includes("<you →")) return;
+    const low = raw.toLowerCase();
+    if (low.includes("opponent") || low.includes("winner") || low.includes("loser") || 
+        low.includes("was killed") || low.includes("disconnected") || low.includes("left the") ||
+        raw.includes(":") || raw.includes("»") || raw.includes("→") || raw.includes("whispers") || raw.includes("From")) {
+      if (!low.includes("map:") || low.includes("opponent")) {
+        if (low.includes(target.toLowerCase()) || Math.random() < 0.3) {
+          log(rt, "system", `🔆 Beam debug chat: ${raw.slice(0,120)}`);
+        }
+      }
+    }
+  };
+
+  // Track server acks for /msg to confirm delivery
+  let lastMsgAck = 0;
+  const ackListener = (msg: any) => {
+    const raw = String(msg);
+    const low = raw.toLowerCase();
+    if (
+      (low.includes(`(to ${target.toLowerCase()})`) || low.includes(`to ${target.toLowerCase()}`)) &&
+      (low.includes("you") || raw.includes("→") || raw.includes("->") || low.includes("whisper"))
+    ) {
+      lastMsgAck = Date.now();
+      log(rt, "system", `🔆 Beam: server ack for /msg to ${target} confirmed`);
+    }
+    if (low.includes("cannot message") || low.includes("player not found") || low.includes("is not online") || low.includes("you cannot message")) {
+      if (low.includes(target.toLowerCase())) {
+        log(rt, "system", `🔆 Beam: server says cannot message ${target}: ${raw.slice(0,100)}`);
+      }
+    }
+  };
+
   const onMsg = (message: any) => {
     // Handle both string (messagestr) and object (chat event with username/message)
     let raw = "";
@@ -2230,7 +2371,15 @@ async function runBeamOnce(
       (low.includes("disconnected") || low.includes("left the game") || low.includes("left the match") || low.includes("has left"))
     ) {
       targetLeft = true;
+      log(rt, "system", `🔆 Beam: ${target} left detected via chat`);
       return;
+    }
+
+    // Detect /msg failures
+    if (low.includes("cannot message") || low.includes("player not found") || low.includes("is not online") || low.includes("you cannot")) {
+      if (low.includes(target.toLowerCase()) || low.includes("message")) {
+        log(rt, "system", `🔆 Beam: /msg failed: ${raw.slice(0,100)}`);
+      }
     }
 
     // Whisper from the target (private) – try all formats
@@ -2259,13 +2408,39 @@ async function runBeamOnce(
   const onChatMineflayer = (username: string, message: string) => {
     if (!username || !message) return;
     if (username.toLowerCase() === self.toLowerCase()) return;
+    // For mineflayer, username is already parsed, so we can directly check
+    if (username.toLowerCase() === target.toLowerCase()) {
+      log(rt, "system", `🔆 Beam: got chat event from ${target}: \"${message.slice(0,80)}\"`);
+      inbox.push(message);
+    }
     onMsg(`${username}: ${message}`);
   };
   // Listen to multiple events to ensure we don't miss chat after arena switch
   bot.on("messagestr", onMsg);
+  bot.on("messagestr", debugChatLogger);
+  bot.on("messagestr", ackListener);
   // For mineflayer bots, also listen to chat event (username, message)
   try {
     bot.on("chat", onChatMineflayer);
+  } catch {}
+  // For Azalea, also listen to any other chat-like events
+  try {
+    bot.on("systemChat", (data: any) => {
+      let text = "";
+      try {
+        if (typeof data === "string") text = data;
+        else if (data?.formattedMessage) {
+          try { text = extractText(JSON.parse(data.formattedMessage)); } catch { text = String(data.formattedMessage); }
+        } else if (data?.content) {
+          try { text = extractText(JSON.parse(data.content)); } catch { text = String(data.content); }
+        } else text = String(data);
+      } catch { text = String(data); }
+      if (text) {
+        debugChatLogger(text);
+        onMsg(text);
+        ackListener(text);
+      }
+    });
   } catch {}
 
   const history: { who: "me" | "them"; text: string }[] = [];
@@ -2273,27 +2448,12 @@ async function runBeamOnce(
   const whisper = async (line: string, gap = SEND_GAP) => {
     const isMcpvp = record.host.toLowerCase().includes("mcpvp");
     try {
-      // FIX: Always send public chat so it's visible in normal chat, AND try /msg for privacy.
-      // On MCPVP, public chat is isolated to duel, so it's safe. On Crystal/Minemen, public also works.
-      // For Azalea: bot.chat sends JSON {op:"chat",text} which calls bot.chat(text) in Rust – handles both chat and commands.
-      // For Mineflayer: bot.chat handles signing.
-      // For NMP: custom client.chat writes correct packet.
+      // SIMPLIFIED: One method per server type to avoid spam filter
+      // Minemen/Crystal: /msg is primary and reliable, public is backup only if /msg fails
+      // MCPVP: public chat is isolated to duel arena, so public is primary
+      
       if (isMcpvp) {
-        // MCPVP duel arenas: public chat only (msg disabled often)
-        if (typeof bot.chat === "function") {
-          bot.chat(line);
-        } else if (bot.write) {
-          bot.write("chat", { message: line });
-        }
-        log(rt, "chat", `<you> ${line}`);
-        // Also try /msg as backup if allowed
-        try {
-          await sleep(250);
-          if (typeof bot.chat === "function") bot.chat(`/msg ${target} ${line}`);
-        } catch {}
-      } else {
-        // Minemen / Crystal / others: send PUBLIC first for visibility, then private /msg
-        // Public ensures "any msg wasn't send to normal chat" is fixed
+        // MCPVP: public chat is duel-local, /msg often disabled
         try {
           if (typeof bot.chat === "function") {
             bot.chat(line);
@@ -2301,25 +2461,47 @@ async function runBeamOnce(
             bot.write("chat", { message: line });
           }
           log(rt, "chat", `<you> ${line}`);
-        } catch {}
-        await sleep(300);
-        // Then private whisper
+          log(rt, "system", `🔆 Beam: sent public (MCPVP) → \"${line.slice(0,60)}\"`);
+        } catch (e) {
+          log(rt, "error", `public chat failed (MCPVP): ${String(e).slice(0,80)}`);
+          // Fallback to /msg
+          try {
+            if (typeof bot.chat === "function") {
+              bot.chat(`/msg ${target} ${line}`);
+              log(rt, "chat", `<you → ${target}> ${line} (fallback)`);
+            }
+          } catch {}
+        }
+      } else {
+        // Minemen / Crystal / others: /msg is reliable
+        // We do ONE /msg attempt, log it, and push to history
+        // The ackListener will confirm if server accepted it
         try {
+          lastMsgAck = 0;
           if (typeof bot.chat === "function") {
             bot.chat(`/msg ${target} ${line}`);
           } else if (bot.write) {
             bot.write("chat", { message: `/msg ${target} ${line}` });
           }
+          // Log immediately as <you → target> so user sees attempt even before ack
           log(rt, "chat", `<you → ${target}> ${line}`);
-        } catch {}
-        // Also try /w alias and /tell as fallback (some servers use different aliases)
-        try {
-          await sleep(200);
-          if (typeof bot.chat === "function") {
-            // don't double log, just attempt
-            bot.chat(`/w ${target} ${line}`);
-          }
-        } catch {}
+          log(rt, "system", `🔆 Beam: sent /msg to ${target}: \"${line.slice(0,60)}\"`);
+        } catch (e) {
+          log(rt, "error", `/msg failed for ${target}: ${String(e).slice(0,100)}`);
+          // Fallback: try public chat as last resort (arena chat visible to opponent in Minemen)
+          try {
+            if (typeof bot.chat === "function") {
+              bot.chat(line);
+              log(rt, "chat", `<you> ${line} (public fallback)`);
+              log(rt, "system", `🔆 Beam: sent public fallback: \"${line.slice(0,60)}\"`);
+            }
+          } catch {}
+        }
+        
+        // Wait 800ms to see if we get ack, but don't block too long
+        // If no ack in 2s, we will try public as backup on next message? No, keep it simple.
+        // Just wait a bit for server to process
+        await sleep(600);
       }
       history.push({ who: "me", text: line });
     } catch (e) {
@@ -2606,8 +2788,13 @@ async function runBeamOnce(
     return outcome;
   } finally {
     bot.removeListener("messagestr", onMsg);
+    try { bot.removeListener("messagestr", debugChatLogger); } catch {}
+    try { bot.removeListener("messagestr", ackListener); } catch {}
     try { bot.removeListener("chat", onChatMineflayer); } catch {}
     try { bot.removeListener("chat", onMsg); } catch {}
+    try { bot.removeListener("systemChat", onMsg); } catch {}
+    try { bot.removeListener("systemChat", debugChatLogger); } catch {}
+    try { bot.removeListener("systemChat", ackListener); } catch {}
     bot.removeListener("death", onDeath);
     bot.removeListener("playerLeft", onPlayerLeft);
     try {

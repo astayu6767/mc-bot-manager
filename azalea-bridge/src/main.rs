@@ -260,14 +260,26 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
             if let Some(text) = cmd.text {
                 let is_cmd = text.starts_with('/');
                 // Log what we're sending for debugging beam visibility
+                let preview: String = text.chars().take(100).collect();
                 if is_cmd {
-                    log_line("system", format!("Azalea sending command: {}", text.chars().take(100).collect::<String>()));
+                    log_line("system", format!("Azalea sending command: {}", preview));
                 } else {
-                    log_line("system", format!("Azalea sending chat: {}", text.chars().take(100).collect::<String>()));
+                    log_line("system", format!("Azalea sending chat: {}", preview));
                 }
                 // Azalea's chat() handles both signed chat and commands internally
-                bot.chat(text);
-                emit(&json!({ "ev": "log", "level": "system", "line": format!("chat sent: {}", if is_cmd { "cmd" } else { "msg" }) }));
+                // Wrap in catch_unwind to avoid panic killing the sidecar
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    bot.chat(text.clone());
+                }));
+                match result {
+                    Ok(_) => {
+                        emit(&json!({ "ev": "log", "level": "system", "line": format!("chat sent: {} '{}'", if is_cmd { "cmd" } else { "msg" }, preview.chars().take(50).collect::<String>()) }));
+                    }
+                    Err(_) => {
+                        log_line("error", format!("Azalea chat panic for: {}", preview));
+                        emit(&json!({ "ev": "error", "line": format!("chat panic: {}", preview) }));
+                    }
+                }
             }
         }
         "disconnect" => {
