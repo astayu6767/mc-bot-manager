@@ -20,7 +20,21 @@ export type AzaleaRuntime = {
   nmpPlayers: Set<string>;
   azaleaChild?: ChildProcess | null;
   azaleaSnap?: ViewSnapshot | null;
+  // Sidecar supervision: heartbeat bookkeeping + respawn state.
+  azaleaHbAt?: number;
+  azaleaHbTickAgeS?: number | null;
+  azaleaHbOnline?: boolean;
+  azaleaHbWatcher?: ReturnType<typeof setInterval> | null;
+  azaleaRespawn?: boolean;
+  azaleaLastRestart?: number;
 };
+
+function stopAzaleaWatcher(rt: AzaleaRuntime) {
+  if (rt.azaleaHbWatcher) {
+    clearInterval(rt.azaleaHbWatcher);
+    rt.azaleaHbWatcher = null;
+  }
+}
 
 type Helpers = {
   // Runtime is the botManager BotRuntime; keep this loose to avoid a cycle.
@@ -246,9 +260,50 @@ export async function startAzaleaBot(
     env: { ...process.env, RUST_LOG: process.env.RUST_LOG || "warn" },
   });
   rt.azaleaChild = child;
+  rt.azaleaRespawn = false;
 
   const handle = new AzaleaHandle(child, profile.name);
   rt.bot = handle;
+
+  // ---- Supervisor: watch the sidecar heartbeat and hard-restart the process
+  // if azalea wedges (no hb = process hung; online + no world ticks for 45s =
+  // zombie client after a server switch). The Rust-side watchdog tries a soft
+  // reconnect first; this is the last-resort recovery. ----
+  stopAzaleaWatcher(rt);
+  rt.azaleaHbAt = Date.now();
+  rt.azaleaHbTickAgeS = null;
+  rt.azaleaHbOnline = false;
+  rt.azaleaHbWatcher = setInterval(() => {
+    if (rt.manualStop || rt.status === "offline" || !rt.azaleaChild) return;
+    const now = Date.now();
+    if (now - (rt.azaleaLastRestart ?? 0) < 60000) return; // restart cooldown
+    const hbAge = now - (rt.azaleaHbAt ?? now);
+    const tickAge = rt.azaleaHbTickAgeS ?? 0;
+    let reason = "";
+    if (hbAge > 20000) {
+      reason = `heartbeat lost (${Math.round(hbAge / 1000)}s) — process hung`;
+    } else if (rt.azaleaHbOnline && tickAge >= 45) {
+      reason = `client zombied (online but no world ticks for ${tickAge}s)`;
+    }
+    if (!reason) return;
+    rt.azaleaLastRestart = now;
+    rt.azaleaRespawn = true;
+    log(rt, "error", `⚠ Azalea ${reason} → restarting sidecar process.`);
+    try {
+      rt.azaleaChild?.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    // Safety net in case the child was already dead and no exit event fires.
+    setTimeout(() => {
+      if (rt.azaleaRespawn && !rt.manualStop) {
+        rt.azaleaRespawn = false;
+        stopAzaleaWatcher(rt);
+        rt.status = "connecting";
+        void startAzaleaBot(record, rt, helpers);
+      }
+    }, 2500);
+  }, 5000);
 
   const writeStart = () => {
     const start = {
@@ -422,6 +477,14 @@ export async function startAzaleaBot(
         rt.joined = false;
         handle.emit("end", String(msg.line || "end"));
         break;
+      case "hb": {
+        // Sidecar heartbeat — silent, only feeds the supervisor bookkeeping.
+        const hb = msg as unknown as { online?: boolean; tick_age_s?: number | null };
+        rt.azaleaHbAt = Date.now();
+        rt.azaleaHbOnline = hb.online === true;
+        rt.azaleaHbTickAgeS = typeof hb.tick_age_s === "number" ? hb.tick_age_s : null;
+        break;
+      }
       default:
         break;
     }
@@ -454,7 +517,18 @@ export async function startAzaleaBot(
   });
 
   child.on("exit", (code, signal) => {
+    // Ignore exit events from a child we've already replaced (respawn race).
+    if (rt.azaleaChild && rt.azaleaChild !== child) return;
     rt.azaleaChild = null;
+    stopAzaleaWatcher(rt);
+    if (rt.azaleaRespawn && !rt.manualStop) {
+      // Supervisor-requested restart (hung/zombied sidecar) — respawn fresh.
+      rt.azaleaRespawn = false;
+      rt.status = "connecting";
+      log(rt, "system", "Azalea sidecar exited → respawning a fresh client…");
+      void startAzaleaBot(record, rt, helpers);
+      return;
+    }
     if (rt.manualStop) {
       rt.status = "offline";
       rt.joined = false;

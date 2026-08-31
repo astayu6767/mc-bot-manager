@@ -56,6 +56,13 @@ type BotRuntime = {
   nmpPlayers: Set<string>;
   azaleaChild: import("child_process").ChildProcess | null;
   azaleaSnap: import("@/app/types").ViewSnapshot | null;
+  // Azalea sidecar supervision (mirrors AzaleaRuntime in azaleaEngine).
+  azaleaHbAt?: number;
+  azaleaHbTickAgeS?: number | null;
+  azaleaHbOnline?: boolean;
+  azaleaHbWatcher?: ReturnType<typeof setInterval> | null;
+  azaleaRespawn?: boolean;
+  azaleaLastRestart?: number;
 };
 
 const MAX_LOGS = 300;
@@ -707,6 +714,11 @@ export async function startBot(record: Bot): Promise<void> {
     }
     rt.azaleaChild = null;
   }
+  if (rt.azaleaHbWatcher) {
+    clearInterval(rt.azaleaHbWatcher);
+    rt.azaleaHbWatcher = null;
+  }
+  rt.azaleaRespawn = false;
   rt.azaleaSnap = null;
 
   rt.status = "connecting";
@@ -1079,6 +1091,12 @@ export async function stopBot(id: string): Promise<void> {
   rt.manualStop = true;
   rt.beamLoop = false;
   stopHumanizer(rt);
+  // Kill the azalea supervisor so it doesn't respawn the sidecar after a stop.
+  if (rt.azaleaHbWatcher) {
+    clearInterval(rt.azaleaHbWatcher);
+    rt.azaleaHbWatcher = null;
+  }
+  rt.azaleaRespawn = false;
   if (rt.bot) {
     log(rt, "system", "Stopping bot...");
     try {
@@ -2884,7 +2902,24 @@ export async function startBeam(id: string): Promise<BotActionResult> {
 
   (async () => {
     try {
-      while (rt.beamLoop && rt.bot && rt.status === "online") {
+      // If the engine restarts mid-beam (e.g. the azalea supervisor respawning
+      // a wedged sidecar), wait for it to come back instead of killing the beam.
+      let waitingSince: number | null = null;
+      while (rt.beamLoop) {
+        if (!rt.bot || rt.status !== "online") {
+          if (waitingSince === null) {
+            waitingSince = Date.now();
+            log(rt, "system", "🔆 Beam: bot reconnecting — beam paused, waiting…");
+          }
+          if (Date.now() - waitingSince > 300000) {
+            log(rt, "system", "🔆 Beam: bot offline too long → stopping beam.");
+            break;
+          }
+          rt.beamStage = "waiting for bot to reconnect…";
+          await sleep(2000);
+          continue;
+        }
+        waitingSince = null;
         const outcome = await runBeamOnce(rt, record);
         if (!rt.beamLoop) break;
         if (outcome === "stopped") break;

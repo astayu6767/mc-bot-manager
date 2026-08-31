@@ -585,7 +585,13 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
+// NOTE: current_thread flavor is REQUIRED, not an optimization. Azalea's docs
+// warn that calling client methods from a plain `tokio::spawn` task lets Tokio
+// schedule a Minecraft tick / handler at an unexpected moment, breaking ECS
+// invariants — which is exactly how the client wedged (ticks + chat die, the
+// process lives) when the beam fired walk//msg commands during a world switch.
+// Everything that touches the Client must run on this thread's LocalSet.
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(io::stderr)
@@ -637,41 +643,6 @@ async fn main() -> eyre::Result<()> {
     }
 
     let cmds: Arc<Mutex<VecDeque<Cmd>>> = Arc::new(Mutex::new(VecDeque::new()));
-    let cmds_stdin = cmds.clone();
-    tokio::spawn(async move {
-        use tokio::io::AsyncBufReadExt;
-        let stdin = tokio::io::stdin();
-        let mut lines = tokio::io::BufReader::new(stdin).lines();
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let line = line.trim().to_string();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    match serde_json::from_str::<Cmd>(&line) {
-                        Ok(cmd) => cmds_stdin.lock().push_back(cmd),
-                        Err(e) => warn!("bad command JSON: {e} ({line})"),
-                    }
-                }
-                Ok(None) => {
-                    cmds_stdin.lock().push_back(Cmd {
-                        op: "disconnect".into(),
-                        text: None,
-                        dir: None,
-                        on: None,
-                        slot: None,
-                        ms: None,
-                    });
-                    break;
-                }
-                Err(e) => {
-                    error!("stdin error: {e}");
-                    break;
-                }
-            }
-        }
-    });
 
     let state = State {
         cmds,
@@ -684,13 +655,56 @@ async fn main() -> eyre::Result<()> {
         disconnect_times: Arc::new(Mutex::new(VecDeque::new())),
     };
 
-    // Command applier: drains the command queue on a wall-clock loop so chat /
-    // movement commands are applied even while the world isn't ticking (proxy
-    // server switches like Minemen lobby → duel arena used to stall Event::Tick
-    // and strand every bot.chat() command in the queue forever).
+    // All tasks below run on a LocalSet on this single thread (see the note on
+    // the current_thread tokio flavor above). Never use plain tokio::spawn for
+    // anything that touches the azalea Client.
+    let local = tokio::task::LocalSet::new();
+
+    // Stdin command reader → queue (queue-only, no Client access).
     {
         let st = state.clone();
-        tokio::spawn(async move {
+        local.spawn_local(async move {
+            use tokio::io::AsyncBufReadExt;
+            let stdin = tokio::io::stdin();
+            let mut lines = tokio::io::BufReader::new(stdin).lines();
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => {
+                        let line = line.trim().to_string();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        match serde_json::from_str::<Cmd>(&line) {
+                            Ok(cmd) => st.cmds.lock().push_back(cmd),
+                            Err(e) => warn!("bad command JSON: {e} ({line})"),
+                        }
+                    }
+                    Ok(None) => {
+                        st.cmds.lock().push_back(Cmd {
+                            op: "disconnect".into(),
+                            text: None,
+                            dir: None,
+                            on: None,
+                            slot: None,
+                            ms: None,
+                        });
+                        break;
+                    }
+                    Err(e) => {
+                        error!("stdin error: {e}");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // Command applier: drains the command queue on a wall-clock loop so chat /
+    // movement commands are applied even while the world isn't ticking (proxy
+    // server switches like Minemen lobby → duel arena stall Event::Tick).
+    {
+        let st = state.clone();
+        local.spawn_local(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                 if !*st.online.lock() {
@@ -707,24 +721,27 @@ async fn main() -> eyre::Result<()> {
         });
     }
 
-    // Watchdog: Event::Tick only fires while the world is loaded. If ticks die
-    // while we're still connected (arena-switch wedge), chat events and
-    // snapshots die with them — force a reconnect so the client recovers
-    // instead of zombifying with no inbound chat and no delivery.
+    // Watchdog + heartbeat:
+    //  - Event::Tick only fires while the world is loaded; if ticks die while
+    //    we're connected (arena-switch wedge), chat events and snapshots die
+    //    with them → force a reconnect so the client recovers.
+    //  - A heartbeat every ~2s lets the Node supervisor tell "sidecar alive"
+    //    from "process wedged" and restart the whole sidecar if needed.
     {
         let st = state.clone();
-        tokio::spawn(async move {
+        local.spawn_local(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let online = *st.online.lock();
+                let tick_age_s = st.last_tick.lock().as_ref().map(|t| t.elapsed().as_secs());
+                emit(&json!({ "ev": "hb", "online": online, "tick_age_s": tick_age_s }));
+
                 let connected = st.client.lock().is_some();
                 if !connected {
                     *st.last_stall_report.lock() = 0;
                     continue;
                 }
-                let stalled_secs = match st.last_tick.lock().as_ref() {
-                    Some(t) => t.elapsed().as_secs(),
-                    None => 0,
-                };
+                let stalled_secs = tick_age_s.unwrap_or(0);
                 if stalled_secs >= 30 {
                     if stalled_secs - *st.last_stall_report.lock() >= 30 {
                         *st.last_stall_report.lock() = stalled_secs;
@@ -736,7 +753,7 @@ async fn main() -> eyre::Result<()> {
                         );
                         let client = st.client.lock().clone();
                         if let Some(client) = client {
-                            tokio::spawn(async move {
+                            tokio::task::spawn_local(async move {
                                 client.disconnect();
                             });
                         }
@@ -758,11 +775,15 @@ async fn main() -> eyre::Result<()> {
     }
 
     info!("joining {address}");
-    ClientBuilder::new()
-        .set_handler(handle)
-        .set_state(state)
-        .reconnect_after(Some(std::time::Duration::from_secs(5)))
-        .start_with_opts(account, address.as_str(), opts)
+    local
+        .run_until(async move {
+            ClientBuilder::new()
+                .set_handler(handle)
+                .set_state(state)
+                .reconnect_after(Some(std::time::Duration::from_secs(5)))
+                .start_with_opts(account, address.as_str(), opts)
+                .await;
+        })
         .await;
 
     emit(&json!({ "ev": "end", "line": "azalea exited" }));
