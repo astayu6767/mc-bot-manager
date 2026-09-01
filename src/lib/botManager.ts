@@ -2293,75 +2293,15 @@ async function runBeamOnce(
   }
   if (!rt.beamLoop) return "stopped";
 
-  // CRITICAL FIX: Clear nmpPlayers when match starts, so we only consider players in arena
-  // Previously, nmpPlayers contained lobby players like 1Alphaa1, causing wrong target
+  // SIMPLE FLOW: match started → message the opponent. No countdown wait, no
+  // walking (movement was what wedged azalea at the arena switch — every hang
+  // started the exact second the walk fired), no extra world scanning. The
+  // match-start listener above already grabbed the opponent from the
+  // "Opponent: X" chat line, and the 1.5s settle above catches late lines.
   try {
-    if (rt.nmpPlayers) {
-      log(rt, "system", `🔆 Beam: clearing nmpPlayers (had ${rt.nmpPlayers.size} players) for fresh arena detection`);
-      rt.nmpPlayers.clear();
-    }
+    if (rt.nmpPlayers) rt.nmpPlayers.clear(); // never target lobby players
   } catch {}
-  
-  // FIX: Minemen has 5..1 countdown where chat may be blocked and players vanished
-  // Wait 5s to let countdown finish and arena fully load, then clear and wait for player_add
-  // During this wait, keep a chat logger active so we don't miss opponent extraction or inbound chat
-  const countdownLogger = (msg: any) => {
-    const raw = String(msg);
-    const low = raw.toLowerCase();
-    // Try to extract opponent during countdown if we missed it
-    if (low.includes("opponent") && !opponentFromChat) {
-      const m = raw.replace(/§./g, " ").match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
-      if (m && m[1] && isValidUsername(m[1]) && m[1].toLowerCase() !== self.toLowerCase()) {
-        opponentFromChat = m[1].trim();
-        log(rt, "system", `🔆 Beam: countdown extracted opponent → ${opponentFromChat}`);
-      }
-    }
-    // Log interesting chat during countdown
-    if (raw.includes("»") || raw.includes(":") || low.includes("vs ") || low.includes("match")) {
-      log(rt, "system", `🔆 Beam countdown chat: ${raw.slice(0,120)}`);
-    }
-  };
-  bot.on("messagestr", countdownLogger);
-  log(rt, "system", "🔆 Beam: waiting 5s for countdown/arena to finish...");
-  await sleep(5000);
-  bot.removeListener("messagestr", countdownLogger);
-  // After countdown, clear again in case lobby players re-added during transfer
-  try {
-    if (rt.nmpPlayers && rt.nmpPlayers.size > 0) {
-      log(rt, "system", `🔆 Beam: post-countdown nmpPlayers has ${rt.nmpPlayers.size}: ${Array.from(rt.nmpPlayers).slice(0,5).join(",")}`);
-      // Don't clear if we already have opponent? Actually clear if size > 1 and doesn't contain opponentFromChat
-      if (!opponentFromChat || !rt.nmpPlayers.has(opponentFromChat)) {
-        // Keep only opponentFromChat if we have it, else clear
-        if (opponentFromChat && isValidUsername(opponentFromChat)) {
-          const opp = opponentFromChat;
-          rt.nmpPlayers.clear();
-          rt.nmpPlayers.add(opp);
-          log(rt, "system", `🔆 Beam: kept only opponent ${opp} in nmpPlayers`);
-        }
-      }
-    }
-  } catch {}
-  
-  rt.beamStage = "walking forward";
-  log(rt, "system", "🔆 Beam: walking forward 2s.");
-  try {
-    if (typeof bot.setControlState === "function") {
-      bot.setControlState("forward", true);
-      await sleep(2000);
-      bot.setControlState("forward", false);
-    } else {
-      // For Raw NMP bots, we just sleep.
-      await sleep(2000);
-    }
-  } catch {
-    try {
-      if (typeof bot.clearControlStates === "function") {
-        bot.clearControlStates();
-      }
-    } catch {
-      // ignore
-    }
-  }
+  rt.beamStage = "messaging opponent";
 
   if (!rt.beamLoop) return "stopped";
 
