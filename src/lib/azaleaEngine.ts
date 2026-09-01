@@ -89,6 +89,12 @@ function shouldFilterAzaleaLog(line: string): boolean {
     "explode (id 36)",
     "packet explode",
     "azalea_client::plugins::connection",
+    // duplicate send-echo logs — Node already logs <you → X> + "sent /msg" per
+    // message, the sidecar's two extra lines per chat were pure console noise
+    "azalea sending command:",
+    "azalea sending chat:",
+    "chat sent: cmd",
+    "chat sent: msg",
     "explode",
   ];
   return filters.some((f) => lower.includes(f));

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
+import { aiText } from "@/lib/ai";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -1851,7 +1852,18 @@ function parseAnyChatFrom(line: string, target: string): string | null {
   return null;
 }
 
-// Conversational AI via OpenRouter API. Returns intent + an in-character reply.
+// Conversational AI: fast local intent detection first, then a live model
+// call (Pollinations with rotating keys, OpenRouter fallback — see lib/ai.ts)
+// only when the reply actually needs brainstorming.
+const NEUTRAL_FALLBACK_REPLIES = [
+  "lol ur pretty good",
+  "so u down or not",
+  "cmon itll take like 5 min",
+  "need a teammate rn pls",
+  "u busy or smth",
+];
+let fallbackIdx = 0;
+
 async function aiConverse(
   channel: string,
   selfName: string,
@@ -1860,134 +1872,66 @@ async function aiConverse(
   serverIp = "badlion-pvp.xyz",
   discordUser = "stood014",
 ): Promise<AiTurn> {
-  const openRouterKey = process.env.OPENROUTER_API_KEY || "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";
-  const model = process.env.OPENROUTER_MODEL || "poolside/laguna-xs-2.1:free";
+  const t = latest.toLowerCase().trim();
 
-  // Pull learned guidelines if AI training is enabled.
+  // 1) Instant local classification — no API latency for clear answers.
+  // (negative checked first: "nah im good" must not count as positive)
+  if (
+    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested)\b/.test(t)
+  ) {
+    return { intent: "negative", reply: "" };
+  }
+  if (
+    /\b(yes|yea|yeah|yep|sure|ok|okay|kk|alr|alright|down|lets|let'?s|bet|fs|for sure|ofc|aight|ight|yessir|why not|i can|i'?ll help|help|with u|im in|i'?m in)\b/.test(t)
+  ) {
+    return { intent: "positive", reply: "lets go" };
+  }
+  if (/\b(channel|chanel|yt|youtube)\b/.test(t)) {
+    return { intent: "question", reply: `its ${channel}` };
+  }
+
+  // 2) Anything else → let the model write a short in-character reply.
   let learnings = "";
   try {
     const { getTrainingState } = await import("@/lib/training");
-    const t = await getTrainingState();
-    if (t.training && t.learnings) learnings = t.learnings;
+    const tr = await getTrainingState();
+    if (tr.training && tr.learnings) learnings = tr.learnings;
   } catch {
     // ignore
   }
 
   const convo = history
+    .slice(-8)
     .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`)
     .join("\n");
-
   const safeIp = serverIp.replace(/\./g, " [dot] ");
 
-  const systemPrompt =
-    `You are a real Minecraft player named ${selfName} chatting with another player. ` +
-    `You're recruiting them for a video. Win = both rank up.\n\n` +
-    `CRITICAL RULES FOR REPLIES (DO NOT BREAK THESE):\n` +
-    `- EXTREMELY SHORT. Maximum 10 words per reply. ONE single thought per reply. NEVER info-dump. Don't yap.\n` +
-    `- Chill, lowercase, no punctuation, typos ok. Be persuasive but play it cool.\n` +
-    `- YOU ARE ALREADY IN-GAME CHATTING WITH THEM. Do not ask for their IGN.\n` +
-    `- NEVER mention your youtube channel name ("${channel}") UNLESS they explicitly ask "whats your channel".\n` +
-    `- DO NOT keep repeating "2v2" or "youtube". Just say "team up" or "u down". Act normal.\n` +
-    `- DO NOT give your discord (${discordUser}) unless they say yes/agree or ask for it.\n` +
-    `- IF THEY SAY they sent the discord friend request ("sent", "added", "done"), reply with something like "alright one sec please" or "checking rn"\n` +
-    `- NEVER GIVE THE SERVER IP UNLESS THEY EXPLICITLY REFUSE DISCORD. Wait for them to say "i cant use discord" before dropping the IP.\n` +
-    `- ALWAYS format the IP exactly as "${safeIp}". NEVER use a real dot or you will get banned.\n` +
-    `- IF THEY ASK "is it on this server?" or "here?", say exactly: "nope its on a public server"\n` +
-    `- IF THEY SAY "im gd", "im good", "nah", "gd", "nah im gd", THEY ARE REJECTING YOU. Output 'negative' intent.\n\n` +
-    (learnings
-      ? `LEARNED GUIDELINES (follow these):\n${learnings}\n\n`
-      : "") +
-    `Decide the intent of their LATEST message and write your next reply.\n` +
-    `Output ONLY strict minified JSON: {"intent":"positive|negative|question|neutral","reply":"<your under-10-words reply>"}.\n` +
-    `INTENT MEANINGS:\n` +
-    `- positive = they agree to team up\n` +
-    `- negative = they refuse, say "im gd", "nah", insult you\n` +
-    `- question = asking when, what gamemode, what channel, this server, etc.\n` +
-    `- neutral = off-topic or unclear\n\n`;
+  const prompt =
+    `You are a real Minecraft player named ${selfName} recruiting another player for a video. Win = both rank up.\n` +
+    `Reply rules: EXTREMELY short (max 10 words), chill lowercase, typos ok, no punctuation spam, one thought only.\n` +
+    `Never mention the youtube channel (${channel}) unless they asked. Never give discord (${discordUser}) unless they agreed.\n` +
+    `Only give the server ip (${safeIp}) if they say they cant use discord.\n` +
+    (learnings ? `Learned guidelines:\n${learnings}\n` : "") +
+    (convo ? `Conversation so far:\n${convo}\n` : "") +
+    `They just said: "${latest}"\n` +
+    `Reply with ONLY your next chat message. No quotes, no explanation.`;
 
-  const userPrompt = (convo ? `conversation so far:\n${convo}\n\n` : "") + `their latest message: ${latest}`;
-
-  try {
-    const url = "https://openrouter.ai/api/v1/chat/completions";
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openRouterKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 150,
-      }),
-      signal: ctrl.signal
-    });
-    clearTimeout(timer);
-    if (res.ok) {
-      const jsonRes = await res.json();
-      const raw = jsonRes.choices?.[0]?.message?.content || "";
-      
-      // Since DeepSeek-R1 outputs thought processes in <think> tags, we need to strip them.
-      const cleanRaw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-      const jsonMatch = cleanRaw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const obj = JSON.parse(jsonMatch[0]);
-          const intent = String(obj.intent || "").toLowerCase();
-          const reply = String(obj.reply || "").slice(0, 120);
-          if (
-            intent === "positive" ||
-            intent === "negative" ||
-            intent === "question" ||
-            intent === "neutral"
-          ) {
-            return { intent: intent as BeamIntent, reply };
-          }
-        } catch {
-          // fall through
-        }
-      }
-      
-      // No JSON — try to infer intent from text.
-      const low = cleanRaw.toLowerCase();
-      if (low.includes("positive")) return { intent: "positive", reply: "" };
-      if (low.includes("negative")) return { intent: "negative", reply: "" };
-      if (low.includes("question")) return { intent: "question", reply: cleanRaw };
-    } else {
-      console.error("OpenRouter API Error:", res.status, await res.text());
-    }
-  } catch (err) {
-    console.error("OpenRouter API Exception:", err);
-    // fall through to heuristic
+  const raw = await aiText(prompt, 10000);
+  if (raw) {
+    const reply = raw
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .pop()!
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .slice(0, 90);
+    if (reply) return { intent: "neutral", reply };
   }
 
-  // Heuristic fallback.
-  const t = latest.toLowerCase();
-  if (/\b(channel|chanel|yt|youtube|name|what.?s it called)\b/.test(t)) {
-    return { intent: "question", reply: `its ${channel}` };
-  }
-  if (
-    /\b(yes|yea|yeah|yep|sure|ok|okay|kk|alr|alright|down|lets|let's|bet|fs|for sure|ofc|aight|ight|yessir|why not|i can|i'?ll help|help)\b/.test(
-      t,
-    )
-  ) {
-    return { intent: "positive", reply: "lets go" };
-  }
-  if (
-    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying)\b/.test(
-      t,
-    )
-  ) {
-    return { intent: "negative", reply: "" };
-  }
-  return { intent: "neutral", reply: "" };
+  // 3) Everything failed → canned in-character reply so the convo never dies.
+  const reply = NEUTRAL_FALLBACK_REPLIES[fallbackIdx % NEUTRAL_FALLBACK_REPLIES.length];
+  fallbackIdx++;
+  return { intent: "neutral", reply };
 }
 
 // Built-in AI-beam opener variants — one is spun at random each match so the
@@ -2403,29 +2347,6 @@ async function runBeamOnce(
 
   // Persistent reply capture: whispers FROM target OR target's public chat.
   const inbox: string[] = [];
-  
-  // Debug logger for ALL chat during beam – helps diagnose why messages not received
-  const debugChatLogger = (message: any) => {
-    let raw = "";
-    if (typeof message === "string") raw = message;
-    else if (message && typeof message === "object") {
-      if (typeof message.text === "string") raw = message.text;
-      else if (typeof message.message === "string") raw = message.message;
-      else raw = String(message);
-    } else raw = String(message);
-    if (!raw) return;
-    if (raw.includes("<you") || raw.includes("<you →")) return;
-    const low = raw.toLowerCase();
-    if (low.includes("opponent") || low.includes("winner") || low.includes("loser") || 
-        low.includes("was killed") || low.includes("disconnected") || low.includes("left the") ||
-        raw.includes(":") || raw.includes("»") || raw.includes("→") || raw.includes("whispers") || raw.includes("From")) {
-      if (!low.includes("map:") || low.includes("opponent")) {
-        if (low.includes(target.toLowerCase()) || Math.random() < 0.3) {
-          log(rt, "system", `🔆 Beam debug chat: ${raw.slice(0,120)}`);
-        }
-      }
-    }
-  };
 
   // Track server acks for /msg to confirm delivery
   let lastMsgAck = 0;
@@ -2541,7 +2462,6 @@ async function runBeamOnce(
   };
   // Listen to multiple events to ensure we don't miss chat after arena switch
   bot.on("messagestr", onMsg);
-  bot.on("messagestr", debugChatLogger);
   bot.on("messagestr", ackListener);
   // For mineflayer bots, also listen to chat event (username, message)
   try {
@@ -2560,7 +2480,6 @@ async function runBeamOnce(
         } else text = String(data);
       } catch { text = String(data); }
       if (text) {
-        debugChatLogger(text);
         onMsg(text);
         ackListener(text);
       }
@@ -2648,7 +2567,7 @@ async function runBeamOnce(
     const gapOrReply = async (ms: number): Promise<boolean> => {
       const start = Date.now();
       while (Date.now() - start < ms) {
-        if (!rt.beamLoop || died) return inbox.length > consumed;
+        if (!rt.beamLoop || died || targetLeft) return inbox.length > consumed;
         if (inbox.length > consumed) {
           await sleep(500); // settle for follow-up lines
           return true;
@@ -2810,6 +2729,11 @@ async function runBeamOnce(
     for (let i = 0; i < openerLines.length; i++) {
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
+      if (targetLeft) {
+        log(rt, "system", `🔆 Beam: ${target} left mid-opener → ending attempt.`);
+        doLeave("target left mid-opener");
+        return "negative";
+      }
       if (i > 0 && inbox.length > consumed) break; // they replied mid-script → conversation takes over
       await whisper(openerLines[i], 0);
       const waitMs = i === 0 ? 1000 : i === openerLines.length - 1 ? 2600 : 3000;
@@ -2824,12 +2748,17 @@ async function runBeamOnce(
     // Ongoing conversation loop (before they've agreed).
     // Wait 10s LONGER than before (30s) so slow repliers aren't dropped.
     let turns = 0;
-    while (rt.beamLoop && !died && turns < 10) {
+    while (rt.beamLoop && !died && !targetLeft && turns < 10) {
       turns++;
       rt.beamStage = `waiting for ${target}…`;
       const got = await gapOrReply(30000);
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
+      if (targetLeft) {
+        log(rt, "system", `🔆 Beam: ${target} left → ending attempt.`);
+        doLeave("target left");
+        return "negative";
+      }
       if (!got) {
         await sleep(1500);
         doLeave("no reply");
@@ -2844,12 +2773,10 @@ async function runBeamOnce(
     return outcome;
   } finally {
     bot.removeListener("messagestr", onMsg);
-    try { bot.removeListener("messagestr", debugChatLogger); } catch {}
     try { bot.removeListener("messagestr", ackListener); } catch {}
     try { bot.removeListener("chat", onChatMineflayer); } catch {}
     try { bot.removeListener("chat", onMsg); } catch {}
     try { bot.removeListener("systemChat", onMsg); } catch {}
-    try { bot.removeListener("systemChat", debugChatLogger); } catch {}
     try { bot.removeListener("systemChat", ackListener); } catch {}
     bot.removeListener("death", onDeath);
     bot.removeListener("playerLeft", onPlayerLeft);
