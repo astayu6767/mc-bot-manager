@@ -1280,6 +1280,10 @@ function extractSenderAndMessage(raw: string): { sender: string; msg: string } |
   m = clean.match(/^(?:From\s+)?([A-Za-z0-9_]+)\s*(?:whispers(?: to you)?:|:)\s+(.+)$/i);
   if (m) return { sender: m[1], msg: m[2] };
 
+  // 5. (From Player) Message — NMP-normalized incoming whisper
+  m = clean.match(/^\(From ([A-Za-z0-9_]+)\)\s+(.+)$/i);
+  if (m) return { sender: m[1], msg: m[2] };
+
   return null;
 }
 
@@ -1998,6 +2002,86 @@ async function runBeamOnce(
   const bot: any = rt.bot;
   const self = String(bot.username || "bot");
   const SEND_GAP = 2600;
+
+  if (record.beamType === "lobby") {
+    // Lobby Anti-AFK mode: the bot NEVER joins a match, so there is no world
+    // switch at all — this mode is safe on every engine (azalea included).
+    // It periodically sends the lobby message (keeps the bot anti-AFK and
+    // advertises the trigger word), and the moment any player says the trigger
+    // word in chat, it whispers them the reply via the same shared send path
+    // as the manual console.
+    rt.beamStage = "lobby anti-afk";
+    const lobbyMsg = record.spamMessage;
+    const interval = Number(record.spamInterval) > 0 ? Number(record.spamInterval) : 60000;
+    const triggerWord = (record.spamTriggerWord || "123").trim();
+    const replyMsg = record.spamReplyMessage;
+    // Word-boundary match so "123" doesn't fire on "1234" or inside words.
+    const triggerRe = new RegExp(
+      `(?:^|[^A-Za-z0-9_])${triggerWord.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_])`,
+      "i",
+    );
+
+    const replied = new Map<string, number>(); // lowercase name → last reply ts
+    let lastReplyAt = 0;
+
+    const onChat = (message: any) => {
+      try {
+        const raw = typeof message === "string" ? message : String(message);
+        // Never react to our own output (lobby message echo / sent whispers).
+        if (raw.startsWith("<you")) return;
+        if (!triggerRe.test(raw)) return;
+        const parsed = extractSenderAndMessage(raw);
+        if (!parsed) return; // can't tell who said it → stay quiet (safe)
+        const sender = parsed.sender;
+        if (!isValidUsername(sender)) return;
+        if (sender.toLowerCase() === self.toLowerCase()) return;
+        const now = Date.now();
+        // Each player gets the reply at most once every 15 minutes…
+        if (now - (replied.get(sender.toLowerCase()) ?? 0) < 15 * 60 * 1000) return;
+        // …and never faster than one whisper per 1.5s (anti-spam).
+        if (now - lastReplyAt < 1500) return;
+        replied.set(sender.toLowerCase(), now);
+        lastReplyAt = now;
+        log(rt, "system", `🔆 Lobby: ${sender} said "${triggerWord}" → whispering them.`);
+        if (sendBotChat(rt, `/msg ${sender} ${replyMsg}`)) {
+          try {
+            import("@/lib/training").then((m) => {
+              void m.recordConversation({
+                botId: rt.id,
+                target: sender,
+                outcome: "positive",
+                transcript: [
+                  { who: "them", text: raw.slice(0, 200) },
+                  { who: "me", text: `/msg ${sender} ${replyMsg}` },
+                ],
+              });
+            });
+          } catch {}
+        }
+      } catch {}
+    };
+
+    bot.on("messagestr", onChat);
+    log(
+      rt,
+      "system",
+      `🔆 Lobby mode: message every ${Math.round(interval / 1000)}s, trigger word "${triggerWord}".`,
+    );
+    try {
+      while (rt.beamLoop) {
+        if (!rt.bot || rt.status !== "online") break; // outer loop waits for reconnect
+        sendBotChat(rt, lobbyMsg);
+        const start = Date.now();
+        while (Date.now() - start < interval && rt.beamLoop) {
+          await sleep(1000);
+          if (!rt.bot || rt.status !== "online") break;
+        }
+      }
+    } finally {
+      bot.removeListener("messagestr", onChat);
+    }
+    return rt.beamLoop ? "positive" : "stopped";
+  }
 
   if (record.beamType === "spam") {
     rt.beamStage = "spamming";

@@ -110,7 +110,8 @@ export const bots = pgTable("bots", {
   discordUser: text("discord_user").notNull().default("stood014"),
   // Bot Engine: "azalea" (Rust vanilla client) | "mineflayer" | "nmp"
   engine: text("engine").notNull().default("azalea"),
-  // Beam type: "ai" or "spam"
+  // Beam type: "ai" | "spam" | "lobby" (lobby = anti-AFK trigger-word mode,
+  // reuses the spam_* settings columns below)
   beamType: text("beam_type").notNull().default("ai"),
   // Spam message
   spamMessage: text("spam_message").notNull().default("join my smp guys /msg me"),

@@ -131,8 +131,8 @@ export async function POST(req: Request) {
     body.engine === "nmp" || body.engine === "azalea" || body.engine === "mineflayer"
       ? body.engine
       : "azalea";
-  const beamType = (body.beamType === "spam") ? "spam" : "ai";
-  const spamMessage = (body.spamMessage ?? "").trim() || "join my smp guys /msg me";
+  const beamType = (body.beamType === "spam" || body.beamType === "lobby") ? body.beamType : "ai";
+  const spamMessage = (body.spamMessage ?? "").trim() || "type 123 in chat for tier test all mode";
   const spamInterval = Number.isFinite(Number(body.spamInterval)) ? Number(body.spamInterval) : 60000;
   const spamTriggerWord = (body.spamTriggerWord ?? "").trim() || "123";
   const spamReplyMessage = (body.spamReplyMessage ?? "").trim() || "add my discord stood014 to join";

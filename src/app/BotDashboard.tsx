@@ -812,7 +812,7 @@ export function EditBotModal({
   const [beamIp, setBeamIp] = useState(bot.beamIp || "badlion-pvp.xyz");
   const [discordUser, setDiscordUser] = useState(bot.discordUser || "stood014");
   const [beamType, setBeamType] = useState(bot.beamType || "ai");
-  const [spamMessage, setSpamMessage] = useState(bot.spamMessage || "join my smp guys /msg me");
+  const [spamMessage, setSpamMessage] = useState(bot.spamMessage || "type 123 in chat for tier test all mode");
   const [spamInterval, setSpamInterval] = useState(String(bot.spamInterval || 60000));
   const [spamTriggerWord, setSpamTriggerWord] = useState(bot.spamTriggerWord || "123");
   const [spamReplyMessage, setSpamReplyMessage] = useState(bot.spamReplyMessage || "add my discord stood014 to join");
@@ -1027,19 +1027,27 @@ export function EditBotModal({
                 >
                   <option value="ai">AI Beaming (Player-to-Player)</option>
                   <option value="spam">Spam Beaming</option>
+                  <option value="lobby">Lobby Anti-AFK (Trigger Word)</option>
                 </select>
               </Field>
 
-              {beamType === "spam" && (
+              {(beamType === "spam" || beamType === "lobby") && (
                 <>
-                  <Field label="Spam Message" hint="The message to send periodically.">
+                  <Field
+                    label={beamType === "lobby" ? "Lobby Message" : "Spam Message"}
+                    hint={
+                      beamType === "lobby"
+                        ? "Periodic lobby chat message. Keeps the bot anti-AFK and advertises the trigger word. E.g., 'type 123 in chat for tier test all mode'."
+                        : "The message to send periodically."
+                    }
+                  >
                     <input
                       value={spamMessage}
                       onChange={(e) => setSpamMessage(e.target.value)}
                       className={inputClass}
                     />
                   </Field>
-                  <Field label="Spam Interval (ms)" hint="How often to send the spam message. E.g., 60000 = 1 minute.">
+                  <Field label="Send Interval (ms)" hint="How often to send the message. E.g., 60000 = 1 minute.">
                     <input
                       type="number"
                       value={spamInterval}
@@ -1047,14 +1055,14 @@ export function EditBotModal({
                       className={inputClass}
                     />
                   </Field>
-                  <Field label="Trigger Word" hint="If a player says this in chat, the bot will whisper them the reply message.">
+                  <Field label="Trigger Word" hint="If a player says this in chat, the bot will /msg them the reply message. E.g., 123.">
                     <input
                       value={spamTriggerWord}
                       onChange={(e) => setSpamTriggerWord(e.target.value)}
                       className={inputClass}
                     />
                   </Field>
-                  <Field label="Reply Message" hint="The whisper to send when the trigger word is said.">
+                  <Field label="Reply Message" hint="Sent as /msg <player> <this message> when the trigger word is said.">
                     <input
                       value={spamReplyMessage}
                       onChange={(e) => setSpamReplyMessage(e.target.value)}

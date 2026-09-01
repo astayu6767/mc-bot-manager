@@ -106,7 +106,7 @@ export async function PATCH(
   ) {
     updates.engine = body.engine;
   }
-  if (body.beamType === "ai" || body.beamType === "spam") {
+  if (body.beamType === "ai" || body.beamType === "spam" || body.beamType === "lobby") {
     updates.beamType = body.beamType;
   }
   if (typeof body.spamMessage === "string") updates.spamMessage = body.spamMessage;
