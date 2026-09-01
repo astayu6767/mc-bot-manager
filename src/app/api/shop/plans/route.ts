@@ -2,7 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { shopPlans } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { createDefaultPlansIfEmpty, getAllPlans } from "@/lib/shop";
+import { createDefaultPlansIfEmpty, getAllPlans, getLtcPriceUSD } from "@/lib/shop";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,7 +33,9 @@ export async function GET() {
     active: p.active === "true",
     finalPrice: Math.round(p.price * (1 - p.discount / 100) * 100) / 100,
   }));
-  return Response.json({ plans: parsed });
+  // Live LTC rate for the shop header (best effort; UI hides on failure)
+  const ltcPrice = await getLtcPriceUSD().catch(() => null);
+  return Response.json({ plans: parsed, ltcPrice });
 }
 
 export async function POST(req: Request) {

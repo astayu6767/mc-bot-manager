@@ -957,7 +957,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       <span className={`ml-auto h-2 w-2 rounded-full ${p.active ? "bg-emerald-400" : "bg-slate-600"}`} />
                     </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                      <input type="number" value={p.price} onChange={(e) => {
+                      <input type="number" step="0.01" value={p.price} onChange={(e) => {
                         const v = Number(e.target.value);
                         setShopPlans(prev => prev.map(x => x.id === p.id ? { ...x, price: v, finalPrice: Math.round(v * (1 - x.discount/100)*100)/100 } : x));
                       }} className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs" placeholder="price" />
@@ -1008,7 +1008,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 <h5 className="text-xs font-semibold text-white">Add new plan</h5>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                   <input value={newPlanTier} onChange={(e) => setNewPlanTier(e.target.value)} placeholder="TIER e.g. PRO" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" />
-                  <input type="number" value={newPlanPrice} onChange={(e) => setNewPlanPrice(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="price $" />
+                  <input type="number" step="0.01" value={newPlanPrice} onChange={(e) => setNewPlanPrice(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="price $" />
                   <input type="number" value={newPlanBots} onChange={(e) => setNewPlanBots(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="bots" />
                   <input type="number" value={newPlanHours} onChange={(e) => setNewPlanHours(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="hours" />
                   <input type="number" value={newPlanDiscount} onChange={(e) => setNewPlanDiscount(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="discount %" />

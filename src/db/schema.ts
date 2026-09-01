@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, uuid, doublePrecision } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -56,7 +56,9 @@ export const licenseKeys = pgTable("license_keys", {
 export const shopPlans = pgTable("shop_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
   tier: text("tier").notNull(), // e.g. STARTER, PRO, ENTERPRISE
-  price: integer("price").notNull(), // USD dollars
+  // USD dollars — decimal (NOT integer) so discounted/custom prices like
+  // 7.76 don't blow up invoice inserts
+  price: doublePrecision("price").notNull(),
   bots: integer("bots").notNull().default(1),
   hours: integer("hours").notNull().default(5),
   features: text("features").notNull().default("[]"), // JSON array string
@@ -71,7 +73,8 @@ export const invoices = pgTable("invoices", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planId: uuid("plan_id").references(() => shopPlans.id, { onDelete: "set null" }),
-  amountUSD: integer("amount_usd").notNull(),
+  // USD — decimal so discounted totals (e.g. 7.76) insert cleanly
+  amountUSD: doublePrecision("amount_usd").notNull(),
   amountLTC: text("amount_ltc").notNull(), // e.g. "0.2004008"
   ltcAddress: text("ltc_address").notNull(),
   ltcPrivateKey: text("ltc_private_key").notNull().default(""), // WIF for sweeping (mock)
