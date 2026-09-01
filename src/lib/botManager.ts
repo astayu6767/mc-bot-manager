@@ -1797,6 +1797,21 @@ function escapeRegex(s: string): string {
 // Strictly detect a whisper FROM a specific player (not chat/kill messages).
 // Supports common formats: "(From X) msg", "From X: msg", "X whispers: msg",
 // "X -> me: msg".
+// True for lines that are the bot's OWN outgoing chat/whisper echoes (server
+// "You whisper/To X" confirmations, our normalized <you ...> logs). The beam
+// must never parse these as incoming messages — the loose public-chat regex
+// used to match e.g. "(To Balikbal) ... teammate :[" and treat the bot's own
+// ":[" tail as a message FROM the target.
+function isSelfEcho(line: string): boolean {
+  const t = line.replace(/\u00A7./g, "").trim();
+  return (
+    t.startsWith("<you") ||
+    /^\(?to\b/i.test(t) ||
+    /^you\s+(?:whisper|→|->)/i.test(t) ||
+    /^\[?to\s+[A-Za-z0-9_]{3,16}\]?\s*[:\u2192]/i.test(t)
+  );
+}
+
 function parseWhisperFrom(line: string, target: string): string | null {
   const t = escapeRegex(target);
   const clean = line.replace(/\u00A7./g, "").trim();
@@ -1828,9 +1843,9 @@ function parsePublicChatFrom(line: string, target: string): string | null {
     const m = clean.match(re);
     if (m && m[1]) {
       const msg = m[1].trim();
-      if (!msg) continue;
+      if (msg.length < 2) continue; // single chars are regex garbage ("["), not chat
       if (/^(?:map|ping|opponent|winner|loser|searching|casual|ranked)/i.test(msg)) continue;
-      if (msg.length > 0 && msg.length <= 256) return msg;
+      if (msg.length <= 256) return msg;
     }
   }
   return null;
@@ -1863,6 +1878,33 @@ const NEUTRAL_FALLBACK_REPLIES = [
   "u busy or smth",
 ];
 let fallbackIdx = 0;
+
+// Rolling record of AI provider outcomes so the console shows whether the
+// live model (pollinations/openrouter) is actually answering.
+const aiProviderLog: { provider: string | null; ms: number }[] = [];
+
+export function getAiProviderStats(): {
+  lastProvider: string | null;
+  pollinations: number;
+  openrouter: number;
+  failed: number;
+  lastLatencyMs: number;
+} {
+  const last = aiProviderLog[aiProviderLog.length - 1] || null;
+  const tally = { pollinations: 0, openrouter: 0, failed: 0 };
+  for (const e of aiProviderLog.slice(-50)) {
+    if (e.provider === "pollinations") tally.pollinations++;
+    else if (e.provider === "openrouter") tally.openrouter++;
+    else tally.failed++;
+  }
+  return {
+    lastProvider: last ? last.provider : null,
+    pollinations: tally.pollinations,
+    openrouter: tally.openrouter,
+    failed: tally.failed,
+    lastLatencyMs: last ? last.ms : 0,
+  };
+}
 
 async function aiConverse(
   channel: string,
@@ -1916,19 +1958,23 @@ async function aiConverse(
     `They just said: "${latest}"\n` +
     `Reply with ONLY your next chat message. No quotes, no explanation.`;
 
-  const raw = await aiText(prompt, 10000);
-  if (raw) {
-    const reply = raw
+  const ai = await aiText(prompt, 10000);
+  if (ai.text) {
+    const reply = ai.text
       .split(/\n/)
       .map((l) => l.trim())
       .filter(Boolean)
       .pop()!
       .replace(/^["'`]+|["'`]+$/g, "")
       .slice(0, 90);
-    if (reply) return { intent: "neutral", reply };
+    if (reply) {
+      aiProviderLog.push({ provider: ai.provider, ms: ai.ms });
+      return { intent: "neutral", reply };
+    }
   }
 
   // 3) Everything failed → canned in-character reply so the convo never dies.
+  aiProviderLog.push({ provider: null, ms: ai.ms });
   const reply = NEUTRAL_FALLBACK_REPLIES[fallbackIdx % NEUTRAL_FALLBACK_REPLIES.length];
   fallbackIdx++;
   return { intent: "neutral", reply };
@@ -1994,7 +2040,7 @@ async function runBeamOnce(
       try {
         const raw = typeof message === "string" ? message : String(message);
         // Never react to our own output (lobby message echo / sent whispers).
-        if (raw.startsWith("<you")) return;
+        if (isSelfEcho(raw)) return;
         if (!triggerRe.test(raw)) return;
         const parsed = extractSenderAndMessage(raw);
         if (!parsed) return; // can't tell who said it → stay quiet (safe)
@@ -2379,6 +2425,7 @@ async function runBeamOnce(
       else raw = String(message);
     } else raw = String(message);
     if (!raw) return;
+    if (isSelfEcho(raw)) return; // never listen to our own outgoing echoes
     const low = raw.toLowerCase();
 
     // --- Match Results detection (the reliable death/leave signal) ---

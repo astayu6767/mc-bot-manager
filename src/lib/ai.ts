@@ -113,9 +113,13 @@ async function openRouterText(prompt: string, timeoutMs: number): Promise<string
   return null;
 }
 
+export type AiResult = { text: string | null; provider: string | null; ms: number };
+
 // Generate a short reply from a full prompt. Tries pollinations (rotating
-// keys) then openrouter. Returns null when everything fails.
-export async function aiText(prompt: string, timeoutMs = 10000): Promise<string | null> {
+// keys) then openrouter. Returns {text, provider, ms} — provider is null when
+// everything failed, so callers can surface it instead of guessing.
+export async function aiText(prompt: string, timeoutMs = 10000): Promise<AiResult> {
+  const started = Date.now();
   const prefer = (process.env.AI_PROVIDER || "auto").toLowerCase();
   const hasPol = pollinationsKeys().length > 0;
   const hasOr = Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY);
@@ -123,15 +127,15 @@ export async function aiText(prompt: string, timeoutMs = 10000): Promise<string 
   const polFirst = prefer === "pollinations" || (prefer === "auto" && hasPol);
   if (polFirst && hasPol) {
     const t = await pollinationsText(prompt, timeoutMs);
-    if (t) return t;
+    if (t) return { text: t, provider: "pollinations", ms: Date.now() - started };
   }
   if (hasOr && prefer !== "pollinations") {
     const t = await openRouterText(prompt, timeoutMs);
-    if (t) return t;
+    if (t) return { text: t, provider: "openrouter", ms: Date.now() - started };
   }
   if (hasPol && !polFirst) {
     const t = await pollinationsText(prompt, timeoutMs);
-    if (t) return t;
+    if (t) return { text: t, provider: "pollinations", ms: Date.now() - started };
   }
-  return null;
+  return { text: null, provider: null, ms: Date.now() - started };
 }

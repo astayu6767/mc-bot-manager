@@ -3,6 +3,7 @@ import {
   getRuntimeView,
   sendChat,
   getBeamState,
+  getAiProviderStats,
 } from "@/lib/botManager";
 import { authorizeBot } from "@/lib/auth";
 
@@ -25,6 +26,7 @@ export async function GET(
     joined: view.joined,
     lastError: view.lastError,
     beam: getBeamState(id),
+    ai: getAiProviderStats(),
   });
 }
 

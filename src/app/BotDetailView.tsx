@@ -19,6 +19,13 @@ export default function BotDetailView({
     looping: false,
     stage: "",
   });
+  const [ai, setAi] = useState<{
+    lastProvider: string | null;
+    pollinations: number;
+    openrouter: number;
+    failed: number;
+    lastLatencyMs: number;
+  } | null>(null);
   const [acting, setActing] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -33,6 +40,7 @@ export default function BotDetailView({
       const data = await res.json();
       setStatus(data.status ?? "offline");
       setBeam(data.beam ?? { looping: false, stage: "" });
+      if (data.ai) setAi(data.ai);
       if (tab === "console") {
         const rawLogs = data.logs ?? [];
         const filtered = rawLogs.filter((l: any) => {
@@ -128,6 +136,21 @@ export default function BotDetailView({
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-xs font-medium text-fuchsia-300 ring-1 ring-fuchsia-500/30">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fuchsia-400" />
                   beam: {beam.stage || "running"}
+                </span>
+              )}
+              {ai && ai.pollinations + ai.openrouter + ai.failed > 0 && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                    ai.lastProvider
+                      ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
+                      : "bg-rose-500/15 text-rose-300 ring-rose-500/30"
+                  }`}
+                  title={`pollinations: ${ai.pollinations} · openrouter: ${ai.openrouter} · failed: ${ai.failed}`}
+                >
+                  AI:{" "}
+                  {ai.lastProvider
+                    ? `${ai.lastProvider} · ${(ai.lastLatencyMs / 1000).toFixed(1)}s`
+                    : "offline — canned replies"}
                 </span>
               )}
             </div>
