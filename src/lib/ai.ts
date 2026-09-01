@@ -1,18 +1,14 @@
 // AI text provider for beam conversations.
 //
-// Providers (tried in order, env-configured — NO keys in code):
-//   POLLINATIONS_API_KEYS  comma-separated keys, rotated round-robin per request
+// Providers (tried in order, env-configured; defaults baked in per owner):
+//   POLLINATIONS_API_KEYS  comma-separated keys (default: two baked-in keys)
 //   POLLINATIONS_MODEL     default "MarcosFRG/deepseek-v4-pro"
-//   OPENROUTER_API_KEY     fallback provider (used if pollinations fails/is unset)
+//   OPENROUTER_API_KEY     fallback provider
 //   AI_MODEL               openrouter model, default "nvidia/nemotron-3.5-lightning:free"
-//   AI_PROVIDER            "pollinations" | "openrouter" | "auto" (default: auto
-//                          = pollinations first when its keys are set, then openrouter)
+//   AI_PROVIDER            "pollinations" | "openrouter" | "auto" (default auto)
 
 const POLLINATIONS_BASE = "https://gen.pollinations.ai/text";
 
-// Default keys baked in per owner's request (env vars still override):
-//   POLLINATIONS_API_KEYS (comma-separated), OPENROUTER_API_KEY,
-//   POLLINATIONS_MODEL, AI_MODEL
 const DEFAULT_POLLINATIONS_KEYS = [
   "sk_qbR3YL6rZwribqxDVJPQgvaqUKAUoqhw",
   "sk_rCHV415WKB5wPpxHe0fudPgBqe3noHa9",
@@ -21,14 +17,6 @@ const DEFAULT_OPENROUTER_KEY = "sk-or-v1-9858f4e2fd88017f0c90fd008d53e15809f9ff2
 const DEFAULT_POLLINATIONS_MODEL = "MarcosFRG/deepseek-v4-pro";
 const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
 
-export function aiStatus(): { pollinations: boolean; openrouter: boolean } {
-  return {
-    pollinations: pollinationsKeys().length > 0,
-    openrouter: Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY),
-  };
-}
-
-let polKeyIdx = 0;
 function pollinationsKeys(): string[] {
   const env = (process.env.POLLINATIONS_API_KEYS || "")
     .split(",")
@@ -36,44 +24,83 @@ function pollinationsKeys(): string[] {
     .filter(Boolean);
   return env.length > 0 ? env : DEFAULT_POLLINATIONS_KEYS;
 }
-function nextPollinationsKey(): string | null {
-  const keys = pollinationsKeys();
-  if (keys.length === 0) return null;
-  const k = keys[polKeyIdx % keys.length];
-  polKeyIdx++;
-  return k;
+
+// Sticky key = index of the key that last WORKED. Free-tier keys get rate
+// limited at random; preferring the healthy one halves the failure surface.
+let stickyKeyIdx = 0;
+let lastPolError = "";
+let lastOrError = "";
+
+// Both provider error chains — never overwritten, so the console shows the
+// FULL reason (e.g. pollinations rate-limit + openrouter key dead).
+export function lastAiError(): string {
+  return [lastPolError, lastOrError].filter(Boolean).join(" | ");
 }
 
+export function aiStatus(): { pollinations: boolean; openrouter: boolean } {
+  return {
+    pollinations: pollinationsKeys().length > 0,
+    openrouter: Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY),
+  };
+}
+
+// Clean a raw model reply: drop reasoning, unwrap code fences (instead of
+// discarding them), extract JSON message fields, strip surrounding quotes.
 function stripReasoning(raw: string): string {
-  return raw
+  let t = raw
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/```[\s\S]*?```/g, "")
     .trim();
+  const fence = t.match(/```[a-zA-Z]*\n?([\s\S]*?)```/);
+  if (fence && fence[1].trim()) t = fence[1].trim();
+  if (t.startsWith("{") && t.endsWith("}")) {
+    try {
+      const o = JSON.parse(t);
+      const inner = o.reply ?? o.message ?? o.text ?? o.response;
+      if (typeof inner === "string" && inner.trim()) t = inner.trim();
+    } catch {
+      // not JSON — keep as-is
+    }
+  }
+  return t.replace(/^["'`]+|["'`]+$/g, "").trim();
 }
 
 async function pollinationsText(prompt: string, timeoutMs: number): Promise<string | null> {
   const keys = pollinationsKeys();
-  const model = process.env.POLLINATIONS_MODEL || "MarcosFRG/deepseek-v4-pro";
-  // Try each key once (rotation spreads load; a dead/rate-limited key is skipped).
-  for (let i = 0; i < keys.length; i++) {
-    const key = nextPollinationsKey();
-    if (!key) return null;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&key=${encodeURIComponent(key)}`;
-      const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
-      clearTimeout(timer);
-      if (res.ok) {
-        const text = stripReasoning(await res.text());
-        if (text) return text;
-      } else {
-        console.warn(`[ai] pollinations key #${(polKeyIdx - 1) % keys.length + 1} → HTTP ${res.status}`);
+  if (keys.length === 0) return null;
+  const model = process.env.POLLINATIONS_MODEL || DEFAULT_POLLINATIONS_MODEL;
+  const errors: string[] = [];
+  // Two passes with a short breather — the free endpoint is flaky (rate
+  // limits / cold starts); a single 5xx must not kill the turn.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < keys.length; i++) {
+      const idx = (stickyKeyIdx + i) % keys.length;
+      const key = keys[idx];
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        const url = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+        clearTimeout(timer);
+        if (res.ok) {
+          const text = stripReasoning(await res.text());
+          if (text) {
+            stickyKeyIdx = idx;
+            lastPolError = "";
+            return text;
+          }
+          errors.push(`key#${idx + 1} empty reply`);
+        } else {
+          const body = (await res.text()).slice(0, 80).replace(/\s+/g, " ");
+          errors.push(`key#${idx + 1} HTTP ${res.status}${body ? ` (${body})` : ""}`);
+        }
+      } catch (err) {
+        errors.push(`key#${idx + 1} ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      console.warn(`[ai] pollinations request failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    if (pass === 0) await new Promise((r) => setTimeout(r, 600));
   }
+  lastPolError = `pollinations: ${errors.join("; ")}`.slice(0, 300);
+  console.warn(`[ai] ${lastPolError}`);
   return null;
 }
 
@@ -103,22 +130,30 @@ async function openRouterText(prompt: string, timeoutMs: number): Promise<string
       const json = await res.json();
       const raw = json?.choices?.[0]?.message?.content || "";
       const text = stripReasoning(String(raw));
-      if (text) return text;
+      if (text) {
+        lastOrError = "";
+        return text;
+      }
+      lastOrError = "openrouter: empty reply";
+      console.warn(`[ai] ${lastOrError}`);
     } else {
-      console.warn(`[ai] openrouter → HTTP ${res.status}`);
+      const body = (await res.text()).slice(0, 80).replace(/\s+/g, " ");
+      lastOrError = `openrouter: HTTP ${res.status}${body ? ` (${body})` : ""}`.slice(0, 250);
+      console.warn(`[ai] ${lastOrError}`);
     }
   } catch (err) {
-    console.warn(`[ai] openrouter request failed: ${err instanceof Error ? err.message : String(err)}`);
+    lastOrError = `openrouter: ${err instanceof Error ? err.message : String(err)}`.slice(0, 250);
+    console.warn(`[ai] ${lastOrError}`);
   }
   return null;
 }
 
 export type AiResult = { text: string | null; provider: string | null; ms: number };
 
-// Generate a short reply from a full prompt. Tries pollinations (rotating
-// keys) then openrouter. Returns {text, provider, ms} — provider is null when
-// everything failed, so callers can surface it instead of guessing.
-export async function aiText(prompt: string, timeoutMs = 10000): Promise<AiResult> {
+// Generate a short reply from a prompt. Pollinations first (sticky-key
+// failover + one retry pass), then OpenRouter. provider is null when
+// everything failed — check lastAiError() for the reason.
+export async function aiText(prompt: string, timeoutMs = 18000): Promise<AiResult> {
   const started = Date.now();
   const prefer = (process.env.AI_PROVIDER || "auto").toLowerCase();
   const hasPol = pollinationsKeys().length > 0;

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
-import { aiText } from "@/lib/ai";
+import { aiText, lastAiError } from "@/lib/ai";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -1907,6 +1907,7 @@ export function getAiProviderStats(): {
 }
 
 async function aiConverse(
+  rt: BotRuntime,
   channel: string,
   selfName: string,
   history: { who: "me" | "them"; text: string }[],
@@ -1945,13 +1946,13 @@ async function aiConverse(
     .join(" | ");
   let prompt =
     `ur ${selfName}, a minecraft player recruiting someone for a yt vid (win=rankup). ` +
-    `reply in under 10 words, lowercase, casual, no punctuation.`;
+    `reply under 10 words, lowercase, casual, friendly, reassure them its easy, no punctuation.`;
   if (lastTurns) prompt += ` chat so far: ${lastTurns}.`;
   prompt += ` they said: "${latest.slice(0, 120)}". ur reply:`;
   // hard cap for safety
   if (prompt.length > 450) prompt = prompt.slice(0, 450);
 
-  const ai = await aiText(prompt, 10000);
+  const ai = await aiText(prompt);
   if (ai.text) {
     const reply = ai.text
       .split(/\n/)
@@ -1968,6 +1969,7 @@ async function aiConverse(
 
   // 3) Everything failed → canned in-character reply so the convo never dies.
   aiProviderLog.push({ provider: null, ms: ai.ms });
+  log(rt, "system", `⚠ AI providers failed (${lastAiError() || "unknown"}) — canned reply sent.`);
   const reply = NEUTRAL_FALLBACK_REPLIES[fallbackIdx % NEUTRAL_FALLBACK_REPLIES.length];
   fallbackIdx++;
   return { intent: "neutral", reply };
@@ -2633,10 +2635,14 @@ async function runBeamOnce(
       rt.beamStage = "positive → dropping discord";
       log(rt, "system", "🔆 Beam: positive! Dropping discord.");
 
-      // They said yes → straight to the point with the discord from bot config.
-      await whisper(`ok add me on discord ${discordUser} I will send you where to hop on`);
+      // They said yes → discord drop in the owner's style, then the follow-up.
+      await whisper(`alr letme send you where to hop on, add me on discord ${discordUser}`);
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
+      await sleep(1800);
+      if (died) return "died";
+      if (!rt.beamLoop) return "stopped";
+      await whisper(`lmk when sent`);
       log(rt, "system", "🔆 Beam: discord drop sent.");
 
       let gaveIp = false;
@@ -2673,7 +2679,7 @@ async function runBeamOnce(
         const sent = /\b(sent|added|added you|add(ed)? u|joined|joining|im in|i'?m in|ready|added ya|friended|on it|coming)\b/.test(lr);
         if (sent) {
           // Send to AI so it replies naturally (e.g. "alright one sec please").
-          const aiSent = await aiConverse(channel, self, history, r, safeIp, discordUser);
+          const aiSent = await aiConverse(rt, channel, self, history, r, safeIp, discordUser);
           if (aiSent.reply) {
             await whisperHuman(aiSent.reply);
           } else {
@@ -2686,7 +2692,7 @@ async function runBeamOnce(
         const noDiscord = /\b(idh|i ?don'?t have|no discord|dont have discord|cant use discord|can'?t use discord|cannot use discord|no dc|dont use discord)\b/.test(lr);
         if (noDiscord && !gaveIp) {
           gaveIp = true;
-          const ai2 = await aiConverse(channel, self, history, r, safeIp, discordUser);
+          const ai2 = await aiConverse(rt, channel, self, history, r, safeIp, discordUser);
           if (ai2.reply) {
             await whisperHuman(ai2.reply);
           } else {
@@ -2702,7 +2708,7 @@ async function runBeamOnce(
         }
 
         // Otherwise, let AI handle any random questions while we wait for them to leave.
-        const ai2 = await aiConverse(channel, self, history, r, safeIp, discordUser);
+        const ai2 = await aiConverse(rt, channel, self, history, r, safeIp, discordUser);
         if (ai2.intent === "negative") {
           doLeave("they declined");
           break;
@@ -2732,7 +2738,7 @@ async function runBeamOnce(
       history.push({ who: "them", text: reply });
       log(rt, "system", `🔆 Beam: ${target} said "${reply.slice(0, 60)}"`);
 
-      const ai = await aiConverse(channel, self, history, reply, serverIp, discordUser);
+      const ai = await aiConverse(rt, channel, self, history, reply, serverIp, discordUser);
       log(rt, "system", `🔆 Beam: intent=${ai.intent.toUpperCase()}.`);
 
       if (ai.intent === "negative") {
