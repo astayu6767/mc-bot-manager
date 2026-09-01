@@ -816,6 +816,7 @@ export function EditBotModal({
   const [spamInterval, setSpamInterval] = useState(String(bot.spamInterval || 60000));
   const [spamTriggerWord, setSpamTriggerWord] = useState(bot.spamTriggerWord || "123");
   const [spamReplyMessage, setSpamReplyMessage] = useState(bot.spamReplyMessage || "add my discord stood014 to join");
+  const [openerScript, setOpenerScript] = useState(bot.openerScript || "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -836,6 +837,7 @@ export function EditBotModal({
       spamInterval?: number;
       spamTriggerWord?: string;
       spamReplyMessage?: string;
+      openerScript?: string;
     } = {};
     if (token.trim()) payload.token = token.trim();
     if (engine !== bot.engine) payload.engine = engine;
@@ -858,6 +860,8 @@ export function EditBotModal({
       payload.spamTriggerWord = spamTriggerWord.trim();
     if (spamReplyMessage.trim() && spamReplyMessage.trim() !== (bot.spamReplyMessage || ""))
       payload.spamReplyMessage = spamReplyMessage.trim();
+    if (openerScript.trim() !== (bot.openerScript || ""))
+      payload.openerScript = openerScript.trim();
       
     if (Object.keys(payload).length === 0) {
       setError("Change a field to save.");
@@ -1030,6 +1034,21 @@ export function EditBotModal({
                   <option value="lobby">Lobby Anti-AFK (Trigger Word)</option>
                 </select>
               </Field>
+
+              {beamType === "ai" && (
+                <Field
+                  label="Opener Script"
+                  hint="One message per line, up to 5 — sent as /msg to the opponent, one by one. Leave empty to spin between 5 built-in defaults."
+                >
+                  <textarea
+                    value={openerScript}
+                    onChange={(e) => setOpenerScript(e.target.value)}
+                    rows={4}
+                    placeholder={"yo\ncan you help me ?\ncause I am in a 2v2 event and I need a teamate ;["}
+                    className={inputClass + " resize-y font-mono text-xs"}
+                  />
+                </Field>
+              )}
 
               {(beamType === "spam" || beamType === "lobby") && (
                 <>

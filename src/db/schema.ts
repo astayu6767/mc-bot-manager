@@ -124,6 +124,8 @@ export const bots = pgTable("bots", {
   spamTriggerWord: text("spam_trigger_word").notNull().default("123"),
   // Spam reply message
   spamReplyMessage: text("spam_reply_message").notNull().default("add my discord stood014 to join"),
+  // AI-beam opener script: one message per line (1-5). Empty = spin between built-in defaults.
+  openerScript: text("opener_script").notNull().default(""),
   // Last known status: offline | connecting | online | error
   status: text("status").notNull().default("offline"),
   lastError: text("last_error"),

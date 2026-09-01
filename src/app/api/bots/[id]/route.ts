@@ -63,6 +63,7 @@ export async function PATCH(
     spamInterval?: number;
     spamTriggerWord?: string;
     spamReplyMessage?: string;
+    openerScript?: string;
   };
   try {
     body = await req.json();
@@ -113,6 +114,7 @@ export async function PATCH(
   if (typeof body.spamInterval === "number") updates.spamInterval = body.spamInterval;
   if (typeof body.spamTriggerWord === "string") updates.spamTriggerWord = body.spamTriggerWord;
   if (typeof body.spamReplyMessage === "string") updates.spamReplyMessage = body.spamReplyMessage;
+  if (typeof body.openerScript === "string") updates.openerScript = body.openerScript.trim();
 
   // Change the target server (host, with optional "host:port", or explicit port).
   if (typeof body.host === "string" && body.host.trim()) {

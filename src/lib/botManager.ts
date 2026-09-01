@@ -1990,6 +1990,28 @@ async function aiConverse(
   return { intent: "neutral", reply: "" };
 }
 
+// Built-in AI-beam opener variants — one is spun at random each match so the
+// bot doesn't repeat the exact same lines every time (anti-pattern detection).
+const DEFAULT_OPENER_VARIANTS: string[][] = [
+  ["yo", "can you help me ?", "cause I am in a 2v2 event and I need a teamate ;["],
+  ["wspp", "sup, could you help me ?", "cause I am in a 2v2 event and I need a teamate ;["],
+  ["hi", "yo can u help me out ?", "im in a 2v2 event and i need a teammate :["],
+  ["hey", "u down to help me real quick ?", "its a 2v2 event and we rank up if we win"],
+  ["sup", "could u help me film smth ?", "2v2 event, need a teamate cuz we win = rankup ;["],
+];
+
+// Opener lines for a bot: its custom script (one message per line, max 5) if
+// set, otherwise a random built-in variant.
+function getOpenerLines(record: Bot): string[] {
+  const custom = (record.openerScript || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  if (custom.length > 0) return custom;
+  return DEFAULT_OPENER_VARIANTS[Math.floor(Math.random() * DEFAULT_OPENER_VARIANTS.length)];
+}
+
 // Run ONE recruit attempt against the nearest player. Returns an outcome.
 async function runBeamOnce(
   rt: BotRuntime,
@@ -2649,34 +2671,14 @@ async function runBeamOnce(
     const runClosing = async (): Promise<
       "positive" | "died" | "stopped"
     > => {
-      rt.beamStage = "positive → asking gamemode";
-      log(rt, "system", "🔆 Beam: positive! Asking for gamemode.");
-      
-      await whisper("ayy lets go, what gamemode u good at?");
+      rt.beamStage = "positive → dropping discord";
+      log(rt, "system", "🔆 Beam: positive! Dropping discord.");
+
+      // They said yes → straight to the point with the discord from bot config.
+      await whisper(`ok add me on discord ${discordUser} I will send you where to hop on`);
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
-
-      // Wait up to 30s for them to answer the gamemode question.
-      await gapOrReply(30000);
-      if (died) return "died";
-      if (!rt.beamLoop) return "stopped";
-
-      // Consume their reply if they sent one.
-      if (inbox.length > consumed) {
-        const r = inbox.slice(consumed).join(" ");
-        consumed = inbox.length;
-        history.push({ who: "them", text: r });
-        log(rt, "system", `🔆 Beam: ${target} answered gamemode: "${r.slice(0, 60)}"`);
-      }
-
-      // Now hardcode the Discord drop so the AI doesn't get stuck chatting forever.
-      rt.beamStage = "dropping discord";
-      await whisper(`could u add my discord ${discordUser} pls, its starting soon`);
-      if (died) return "died";
-      if (!rt.beamLoop) return "stopped";
-      await whisper("then ill send the where to hop on");
-      await whisper("thanks man");
-      log(rt, "system", "🔆 Beam: closing script sent.");
+      log(rt, "system", "🔆 Beam: discord drop sent.");
 
       let gaveIp = false;
       const safeIp = serverIp.replace(/\./g, " [dot] ");
@@ -2798,47 +2800,23 @@ async function runBeamOnce(
     outcome = await (async (): Promise<
       "positive" | "negative" | "died" | "stopped"
     > => {
-    // Opener — Randomize greetings and pitches to look human and avoid anti-spam
-    const greetings = ["hi", "hey", "yo", "sup", "hello"];
-    const pitches = [
-      "can u help me film a yt video",
-      "need some help recording a yt vid",
-      "could u help me film a video for my channel",
-      "u down to help me record a video"
-    ];
-    const reasons = [
-      "Cuz i got a challenge of a 2v2 if we win we will get a rankup",
-      "its a 2v2 challenge and we both get a rankup if we win",
-      "im doing a 2v2 challenge where we rank up if we win"
-    ];
-
-    const greet = greetings[Math.floor(Math.random() * greetings.length)];
-    const pitch = pitches[Math.floor(Math.random() * pitches.length)];
-    const reason = reasons[Math.floor(Math.random() * reasons.length)];
+    // Opener — user-configurable script (one message per line) or a random
+    // built-in variant, so every match doesn't read identical in chat logs.
+    const openerLines = getOpenerLines(record);
+    log(rt, "system", `🔆 Beam: opener (${openerLines.length} line${openerLines.length === 1 ? "" : "s"}): ${openerLines.map((l) => `"${l.slice(0, 30)}"`).join(" ")}`);
 
     rt.beamStage = `messaging ${target}`;
 
-    await whisper(greet, 0);
-    if (await gapOrReply(1000)) {
-      const o = await handleReply();
-      if (o !== "continue") return settle(o);
-    } else if (died) return "died";
-    else if (!rt.beamLoop) return "stopped";
-
-    if (inbox.length <= consumed) {
-      await whisper(pitch, 0);
-      if (await gapOrReply(3000)) {
+    for (let i = 0; i < openerLines.length; i++) {
+      if (died) return "died";
+      if (!rt.beamLoop) return "stopped";
+      if (i > 0 && inbox.length > consumed) break; // they replied mid-script → conversation takes over
+      await whisper(openerLines[i], 0);
+      const waitMs = i === 0 ? 1000 : i === openerLines.length - 1 ? 2600 : 3000;
+      if (await gapOrReply(waitMs)) {
         const o = await handleReply();
         if (o !== "continue") return settle(o);
-      } else if (died) return "died";
-      else if (!rt.beamLoop) return "stopped";
-    }
-
-    if (inbox.length <= consumed) {
-      await whisper(reason, 0);
-      if (await gapOrReply(2600)) {
-        const o = await handleReply();
-        if (o !== "continue") return settle(o);
+        break; // they engaged — let the conversation loop do the talking
       } else if (died) return "died";
       else if (!rt.beamLoop) return "stopped";
     }

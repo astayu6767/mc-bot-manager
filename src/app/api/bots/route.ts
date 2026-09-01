@@ -39,6 +39,7 @@ export async function GET() {
       spamInterval: b.spamInterval,
       spamTriggerWord: b.spamTriggerWord,
       spamReplyMessage: b.spamReplyMessage,
+      openerScript: b.openerScript,
       status: rt.status,
       joined: rt.joined,
       lastError: rt.lastError ?? b.lastError,
@@ -89,6 +90,7 @@ export async function POST(req: Request) {
     spamInterval?: number;
     spamTriggerWord?: string;
     spamReplyMessage?: string;
+    openerScript?: string;
   };
   try {
     body = await req.json();
@@ -136,6 +138,7 @@ export async function POST(req: Request) {
   const spamInterval = Number.isFinite(Number(body.spamInterval)) ? Number(body.spamInterval) : 60000;
   const spamTriggerWord = (body.spamTriggerWord ?? "").trim() || "123";
   const spamReplyMessage = (body.spamReplyMessage ?? "").trim() || "add my discord stood014 to join";
+  const openerScript = (body.openerScript ?? "").trim();
 
   const [inserted] = await db
     .insert(bots)
@@ -156,6 +159,7 @@ export async function POST(req: Request) {
       spamInterval,
       spamTriggerWord,
       spamReplyMessage,
+      openerScript,
       status: "connecting",
       enabled: "true",
     })
