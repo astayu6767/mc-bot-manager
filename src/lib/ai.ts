@@ -10,19 +10,31 @@
 
 const POLLINATIONS_BASE = "https://gen.pollinations.ai/text";
 
+// Default keys baked in per owner's request (env vars still override):
+//   POLLINATIONS_API_KEYS (comma-separated), OPENROUTER_API_KEY,
+//   POLLINATIONS_MODEL, AI_MODEL
+const DEFAULT_POLLINATIONS_KEYS = [
+  "sk_qbR3YL6rZwribqxDVJPQgvaqUKAUoqhw",
+  "sk_rCHV415WKB5wPpxHe0fudPgBqe3noHa9",
+];
+const DEFAULT_OPENROUTER_KEY = "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";
+const DEFAULT_POLLINATIONS_MODEL = "MarcosFRG/deepseek-v4-pro";
+const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
+
 export function aiStatus(): { pollinations: boolean; openrouter: boolean } {
   return {
-    pollinations: ((process.env.POLLINATIONS_API_KEYS || "").split(",").map((s) => s.trim()).filter(Boolean)).length > 0,
-    openrouter: Boolean((process.env.OPENROUTER_API_KEY || "").trim()),
+    pollinations: pollinationsKeys().length > 0,
+    openrouter: Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY),
   };
 }
 
 let polKeyIdx = 0;
 function pollinationsKeys(): string[] {
-  return (process.env.POLLINATIONS_API_KEYS || "")
+  const env = (process.env.POLLINATIONS_API_KEYS || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  return env.length > 0 ? env : DEFAULT_POLLINATIONS_KEYS;
 }
 function nextPollinationsKey(): string | null {
   const keys = pollinationsKeys();
@@ -66,9 +78,9 @@ async function pollinationsText(prompt: string, timeoutMs: number): Promise<stri
 }
 
 async function openRouterText(prompt: string, timeoutMs: number): Promise<string | null> {
-  const key = (process.env.OPENROUTER_API_KEY || "").trim();
+  const key = (process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY;
   if (!key) return null;
-  const model = process.env.AI_MODEL || "nvidia/nemotron-3.5-lightning:free";
+  const model = process.env.AI_MODEL || DEFAULT_OPENROUTER_MODEL;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -106,7 +118,7 @@ async function openRouterText(prompt: string, timeoutMs: number): Promise<string
 export async function aiText(prompt: string, timeoutMs = 10000): Promise<string | null> {
   const prefer = (process.env.AI_PROVIDER || "auto").toLowerCase();
   const hasPol = pollinationsKeys().length > 0;
-  const hasOr = Boolean((process.env.OPENROUTER_API_KEY || "").trim());
+  const hasOr = Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY);
 
   const polFirst = prefer === "pollinations" || (prefer === "auto" && hasPol);
   if (polFirst && hasPol) {
