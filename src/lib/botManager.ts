@@ -1933,30 +1933,23 @@ async function aiConverse(
   }
 
   // 2) Anything else → let the model write a short in-character reply.
-  let learnings = "";
-  try {
-    const { getTrainingState } = await import("@/lib/training");
-    const tr = await getTrainingState();
-    if (tr.training && tr.learnings) learnings = tr.learnings;
-  } catch {
-    // ignore
-  }
+  // (discord/ip/channel handling is done in code by the beam loop, not the
+  // model — keeps the prompt tiny, see below)
 
-  const convo = history
-    .slice(-8)
+  // COMPACT prompt — the Pollinations GET endpoint 500s on long URLs (verified:
+  // ~250 chars works, ~900 chars returns HTTP 500), so keep this under ~400
+  // chars. Persona + last few turns + their message is all the model needs.
+  const lastTurns = history
+    .slice(-3)
     .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`)
-    .join("\n");
-  const safeIp = serverIp.replace(/\./g, " [dot] ");
-
-  const prompt =
-    `You are a real Minecraft player named ${selfName} recruiting another player for a video. Win = both rank up.\n` +
-    `Reply rules: EXTREMELY short (max 10 words), chill lowercase, typos ok, no punctuation spam, one thought only.\n` +
-    `Never mention the youtube channel (${channel}) unless they asked. Never give discord (${discordUser}) unless they agreed.\n` +
-    `Only give the server ip (${safeIp}) if they say they cant use discord.\n` +
-    (learnings ? `Learned guidelines:\n${learnings}\n` : "") +
-    (convo ? `Conversation so far:\n${convo}\n` : "") +
-    `They just said: "${latest}"\n` +
-    `Reply with ONLY your next chat message. No quotes, no explanation.`;
+    .join(" | ");
+  let prompt =
+    `ur ${selfName}, a minecraft player recruiting someone for a yt vid (win=rankup). ` +
+    `reply in under 10 words, lowercase, casual, no punctuation.`;
+  if (lastTurns) prompt += ` chat so far: ${lastTurns}.`;
+  prompt += ` they said: "${latest.slice(0, 120)}". ur reply:`;
+  // hard cap for safety
+  if (prompt.length > 450) prompt = prompt.slice(0, 450);
 
   const ai = await aiText(prompt, 10000);
   if (ai.text) {
