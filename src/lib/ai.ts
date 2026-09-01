@@ -14,7 +14,10 @@ const DEFAULT_POLLINATIONS_KEYS = [
   "sk_rCHV415WKB5wPpxHe0fudPgBqe3noHa9",
 ];
 const DEFAULT_OPENROUTER_KEY = "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";
-const DEFAULT_POLLINATIONS_MODEL = "MarcosFRG/deepseek-v4-pro";
+// "deepseek-pro" is live-verified fast/reliable on both keys; the earlier
+// default (MarcosFRG/deepseek-v4-pro) hangs for tens of seconds or 500s
+// intermittently — that caused the "This operation was aborted" cascade.
+const DEFAULT_POLLINATIONS_MODEL = "deepseek-pro";
 const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
 
 function pollinationsKeys(): string[] {
@@ -68,6 +71,8 @@ async function pollinationsText(prompt: string, timeoutMs: number): Promise<stri
   const keys = pollinationsKeys();
   if (keys.length === 0) return null;
   const model = process.env.POLLINATIONS_MODEL || DEFAULT_POLLINATIONS_MODEL;
+  // per-attempt cap: 4 attempts + breather must stay well under a chat turn
+  timeoutMs = Math.min(timeoutMs, 7000);
   const errors: string[] = [];
   // Two passes with a short breather — the free endpoint is flaky (rate
   // limits / cold starts); a single 5xx must not kill the turn.
@@ -108,6 +113,7 @@ async function openRouterText(prompt: string, timeoutMs: number): Promise<string
   const key = (process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY;
   if (!key) return null;
   const model = process.env.AI_MODEL || DEFAULT_OPENROUTER_MODEL;
+  timeoutMs = Math.min(timeoutMs, 12000);
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
