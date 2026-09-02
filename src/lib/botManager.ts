@@ -1932,6 +1932,11 @@ async function aiConverse(
   if (/\b(channel|chanel|yt|youtube)\b/.test(t)) {
     return { intent: "question", reply: `its ${channel}` };
   }
+  // Server questions get the REAL configured IP from code — the model
+  // invented "hypixel" here, which is never the right answer.
+  if (/\b(server|srv|ip|address|adress)\b/.test(t) || /\bwhere\b.{0,20}\b(play|hop|join)\b/.test(t)) {
+    return { intent: "question", reply: `its ${serverIp}` };
+  }
 
   // 2) Anything else → let the model write a short in-character reply.
   // (discord/ip/channel handling is done in code by the beam loop, not the
@@ -1946,7 +1951,8 @@ async function aiConverse(
     .join(" | ");
   let prompt =
     `ur ${selfName}, a minecraft player recruiting someone for a yt vid (win=rankup). ` +
-    `reply under 10 words, lowercase, casual, friendly, reassure them its easy, no punctuation.`;
+    `reply under 10 words, lowercase, casual, friendly, vary ur wording, no punctuation. ` +
+    `dont mention rankup unless they ask.`;
   if (lastTurns) prompt += ` chat so far: ${lastTurns}.`;
   prompt += ` they said: "${latest.slice(0, 120)}". ur reply:`;
   // hard cap for safety
@@ -1960,6 +1966,7 @@ async function aiConverse(
       .filter(Boolean)
       .pop()!
       .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/\bhypixel\b/gi, serverIp)
       .slice(0, 90);
     if (reply) {
       aiProviderLog.push({ provider: ai.provider, ms: ai.ms });
