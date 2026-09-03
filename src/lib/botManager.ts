@@ -1950,9 +1950,9 @@ async function aiConverse(
     .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`)
     .join(" | ");
   let prompt =
-    `ur ${selfName}, a minecraft player recruiting someone for a yt vid (win=rankup). ` +
-    `reply under 10 words, lowercase, casual, friendly, vary ur wording, no punctuation. ` +
-    `dont mention rankup unless they ask.`;
+    `ur ${selfName}, a mc player recruiting someone for a yt vid (win=rankup). ` +
+    `its a 2v2 pvp tournament (sword, spear mace, uhc tiers), never say bedwars or hypixel. ` +
+    `reply under 10 words, lowercase, casual, vary ur wording, no punctuation, dont mention rankup unless asked.`;
   if (lastTurns) prompt += ` chat so far: ${lastTurns}.`;
   prompt += ` they said: "${latest.slice(0, 120)}". ur reply:`;
   // hard cap for safety
@@ -1967,6 +1967,7 @@ async function aiConverse(
       .pop()!
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\bhypixel\b/gi, serverIp)
+      .replace(/\bbedwars\b/gi, "2v2 pvp")
       .slice(0, 90);
     if (reply) {
       aiProviderLog.push({ provider: ai.provider, ms: ai.ms });
@@ -2758,6 +2759,13 @@ async function runBeamOnce(
       // question / neutral → reply in-character (split into human messages).
       if (ai.reply) await whisperHuman(ai.reply);
       else if (ai.intent === "question") await whisper(`its ${channel}`);
+      // Soft decline ("im playing with my friends") — the farewell reply is
+      // sent above; now LEAVE instead of lingering and answering forever.
+      if (/\b(with my friends?|with friends|playing with (my )?friends?|i'?m playing|im playing|playing rn|in a game rn)\b/.test(reply.toLowerCase())) {
+        await sleep(1500);
+        doLeave("they're busy (playing with friends)");
+        return "negative";
+      }
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
       return "continue";
@@ -2779,6 +2787,21 @@ async function runBeamOnce(
 
     rt.beamStage = `messaging ${target}`;
 
+    // Send the remaining opener lines first (the pitch must land), then
+    // answer whatever they said mid-script.
+    const finishScriptThenReply = async (
+      fromIdx: number,
+    ): Promise<"negative" | "positive" | "continue" | "died" | "stopped"> => {
+      for (let j = fromIdx; j < openerLines.length; j++) {
+        if (died || !rt.beamLoop || targetLeft) break;
+        await whisper(openerLines[j], 0);
+        await sleep(1200);
+      }
+      if (died) return "died";
+      if (!rt.beamLoop) return "stopped";
+      return await handleReply();
+    };
+
     for (let i = 0; i < openerLines.length; i++) {
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
@@ -2787,11 +2810,17 @@ async function runBeamOnce(
         doLeave("target left mid-opener");
         return "negative";
       }
-      if (i > 0 && inbox.length > consumed) break; // they replied mid-script → conversation takes over
+      if (i > 0 && inbox.length > consumed) {
+        // they replied mid-script → finish the script, then answer
+        const o = await finishScriptThenReply(i);
+        if (o !== "continue") return settle(o);
+        break;
+      }
       await whisper(openerLines[i], 0);
       const waitMs = i === 0 ? 1000 : i === openerLines.length - 1 ? 2600 : 3000;
       if (await gapOrReply(waitMs)) {
-        const o = await handleReply();
+        // reply during the wait → send any remaining lines first, then answer
+        const o = await finishScriptThenReply(i + 1);
         if (o !== "continue") return settle(o);
         break; // they engaged — let the conversation loop do the talking
       } else if (died) return "died";
