@@ -1920,7 +1920,7 @@ async function aiConverse(
   // 1) Instant local classification — no API latency for clear answers.
   // (negative checked first: "nah im good" must not count as positive)
   if (
-    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested)\b/.test(t)
+    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait)\b/.test(t)
   ) {
     return { intent: "negative", reply: "" };
   }
@@ -2036,8 +2036,49 @@ async function runBeamOnce(
       "i",
     );
 
-    const replied = new Map<string, number>(); // lowercase name → last reply ts
-    let lastReplyAt = 0;
+    const replied = new Map<string, number>(); // lowercase name → last queued ts
+    // EVERY player who says the trigger word gets queued and whispered ~10s
+    // later — nobody is dropped, even if several say it in the same second.
+    const pending: { sender: string; dueAt: number }[] = [];
+    let lastSendAt = 0;
+
+    // The server rate-limits identical messages — same point, different
+    // wording every time (prefix + optional "dc" shorthand + suffix).
+    const varyReply = (base: string): string => {
+      if (!base) return "";
+      const prefixes = ["", "yeah so ", "yo ", "alr ", "hey ", "btw ", "bro "];
+      const suffixes = ["", " rq", " pls", " real quick", " ty"];
+      const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const sfx = suffixes[Math.floor(Math.random() * suffixes.length)];
+      const body = Math.random() < 0.4 ? base.replace(/\bdiscord\b/gi, "dc") : base;
+      return `${p}${body}${sfx}`.trim();
+    };
+
+    const drainPending = () => {
+      if (!rt.bot || rt.status !== "online") return;
+      const now = Date.now();
+      if (now - lastSendAt < 1600) return; // spacing between whispers
+      const idx = pending.findIndex((e) => e.dueAt <= now);
+      if (idx === -1) return;
+      const item = pending.splice(idx, 1)[0];
+      lastSendAt = now;
+      const msg = varyReply(replyMsg);
+      log(rt, "system", `🔆 Lobby: whispering ${item.sender}: "${msg.slice(0, 70)}"`);
+      if (sendBotChat(rt, `/msg ${item.sender} ${msg}`)) {
+        try {
+          import("@/lib/training").then((m) => {
+            void m.recordConversation({
+              botId: rt.id,
+              target: item.sender,
+              outcome: "positive",
+              transcript: [
+                { who: "me", text: `/msg ${item.sender} ${msg}` },
+              ],
+            });
+          });
+        } catch {}
+      }
+    };
 
     const onChat = (message: any) => {
       try {
@@ -2050,29 +2091,15 @@ async function runBeamOnce(
         const sender = parsed.sender;
         if (!isValidUsername(sender)) return;
         if (sender.toLowerCase() === self.toLowerCase()) return;
+        const lc = sender.toLowerCase();
         const now = Date.now();
-        // Each player gets the reply at most once every 15 minutes…
-        if (now - (replied.get(sender.toLowerCase()) ?? 0) < 15 * 60 * 1000) return;
-        // …and never faster than one whisper per 1.5s (anti-spam).
-        if (now - lastReplyAt < 1500) return;
-        replied.set(sender.toLowerCase(), now);
-        lastReplyAt = now;
-        log(rt, "system", `🔆 Lobby: ${sender} said "${triggerWord}" → whispering them.`);
-        if (sendBotChat(rt, `/msg ${sender} ${replyMsg}`)) {
-          try {
-            import("@/lib/training").then((m) => {
-              void m.recordConversation({
-                botId: rt.id,
-                target: sender,
-                outcome: "positive",
-                transcript: [
-                  { who: "them", text: raw.slice(0, 200) },
-                  { who: "me", text: `/msg ${sender} ${replyMsg}` },
-                ],
-              });
-            });
-          } catch {}
-        }
+        // Each player at most once every 15 min, and never double-queued…
+        if (now - (replied.get(lc) ?? 0) < 15 * 60 * 1000) return;
+        if (pending.some((e) => e.sender.toLowerCase() === lc)) return;
+        replied.set(lc, now);
+        // …queued for a whisper 10s later (feels human, beats spam filters).
+        pending.push({ sender, dueAt: now + 10000 });
+        log(rt, "system", `🔆 Lobby: ${sender} said "${triggerWord}" → whisper in 10s.`);
       } catch {}
     };
 
@@ -2085,10 +2112,11 @@ async function runBeamOnce(
     try {
       while (rt.beamLoop) {
         if (!rt.bot || rt.status !== "online") break; // outer loop waits for reconnect
-        sendBotChat(rt, lobbyMsg);
+        sendBotChat(rt, varyReply(lobbyMsg)); // varied so the repeat never gets muted
         const start = Date.now();
         while (Date.now() - start < interval && rt.beamLoop) {
           await sleep(1000);
+          drainPending(); // due trigger whispers go out during the wait
           if (!rt.bot || rt.status !== "online") break;
         }
       }
