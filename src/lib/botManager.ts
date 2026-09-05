@@ -1920,12 +1920,20 @@ async function aiConverse(
   // 1) Instant local classification — no API latency for clear answers.
   // (negative checked first: "nah im good" must not count as positive)
   if (
-    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait)\b/.test(t)
+    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait|see ya|cya|gtg|g2g|bye)\b/.test(t)
   ) {
     return { intent: "negative", reply: "" };
   }
+  // "how can i participate" = they want in -> treat as YES (discord drop).
+  // The AI used to improvise procedure answers here ("send me ur ign and
+  // teammate") because it doesn't know the signup flow — code does.
   if (
-    /\b(yes|yea|yeah|yep|sure|ok|okay|kk|alr|alright|down|lets|let'?s|bet|fs|for sure|ofc|aight|ight|yessir|why not|i can|i'?ll help|help|with u|im in|i'?m in)\b/.test(t)
+    /\b(how (can|do|to) (i |u |you |we )?(participate|join|enter|sign ?up|get in)|where do i (sign ?up|join)|can i (join|play|participate|enter)|i wanna (join|play|help|participate)|i want (to join|in)|lets do it|im interested|i'?m interested)\b/.test(t)
+  ) {
+    return { intent: "positive", reply: "lets go" };
+  }
+  if (
+    /\b(yes|yea|yeah|yep|sure|ok|okay|oke|okey|okej|okie|okk|kk|alr|alright|down|lets|let'?s|bet|fs|for sure|ofc|aight|ight|yessir|yup|ye|mhm|mmk|why not|im down|i'?m down|down to|i can|i'?ll help|help|help u|help you|with u|im in|i'?m in)\b/.test(t)
   ) {
     return { intent: "positive", reply: "lets go" };
   }
@@ -1943,20 +1951,30 @@ async function aiConverse(
   // model — keeps the prompt tiny, see below)
 
   // COMPACT prompt — the Pollinations GET endpoint 500s on long URLs (verified:
-  // ~250 chars works, ~900 chars returns HTTP 500), so keep this under ~400
-  // chars. Persona + last few turns + their message is all the model needs.
-  const lastTurns = history
+  // ~430 chars works, ~900 chars returns HTTP 500), so the prompt is BUDGETED
+  // to 450: persona + their latest message are reserved, history fills the
+  // rest (oldest turns dropped first). Never blind-slice — that beheads the
+  // "they said:" part and the model answers without seeing the message.
+  const persona =
+    `ur ${selfName}, mc player recruiting for a yt vid (win=rankup). ` +
+    `2v2 pvp tourney (sword, spear mace, uhc tiers), never say bedwars or hypixel. ` +
+    `under 10 words, lowercase, casual, vary wording, no punctuation, no rankup unless asked. ` +
+    `if they ask how to join: add my dc ${discordUser}. `;
+  const tail = ` they said: "${latest.slice(0, 120)}". ur reply:`;
+  let budget = 450 - persona.length - tail.length;
+  const turnsText = history
     .slice(-3)
-    .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`)
-    .join(" | ");
-  let prompt =
-    `ur ${selfName}, a mc player recruiting someone for a yt vid (win=rankup). ` +
-    `its a 2v2 pvp tournament (sword, spear mace, uhc tiers), never say bedwars or hypixel. ` +
-    `reply under 10 words, lowercase, casual, vary ur wording, no punctuation, dont mention rankup unless asked.`;
-  if (lastTurns) prompt += ` chat so far: ${lastTurns}.`;
-  prompt += ` they said: "${latest.slice(0, 120)}". ur reply:`;
-  // hard cap for safety
-  if (prompt.length > 450) prompt = prompt.slice(0, 450);
+    .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`);
+  const kept: string[] = [];
+  for (let i = turnsText.length - 1; i >= 0; i--) {
+    const piece = (kept.length ? " | " : "") + turnsText[i];
+    if (piece.length > budget) break;
+    kept.unshift(turnsText[i]);
+    budget -= piece.length;
+  }
+  let prompt = persona;
+  if (kept.length) prompt += `chat: ${kept.join(" | ")}. `;
+  prompt += tail;
 
   const ai = await aiText(prompt);
   if (ai.text) {
