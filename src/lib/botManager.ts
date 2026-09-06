@@ -1956,11 +1956,11 @@ async function aiConverse(
   // rest (oldest turns dropped first). Never blind-slice — that beheads the
   // "they said:" part and the model answers without seeing the message.
   const persona =
-    `ur ${selfName}, mc player recruiting for a yt vid (win=rankup). ` +
-    `2v2 pvp tourney (sword, spear mace, uhc tiers), never say bedwars or hypixel. ` +
-    `under 10 words, lowercase, casual, vary wording, no punctuation, no rankup unless asked. ` +
-    `if they ask how to join: add my dc ${discordUser}. `;
-  const tail = ` they said: "${latest.slice(0, 120)}". ur reply:`;
+    `ur ${selfName}, lt5 player recruiting a teammate for a 2v2 tourney (sword, spear mace, uhc tiers). ` +
+    `u and me vs another duo, win = both rankup. im playing not hosting, filming for yt. ` +
+    `under 10 words, lowercase casual, vary wording. if they mention rankup: we both get it. ` +
+    `to join: add my dc ${discordUser}. never bedwars/hypixel. `;
+  const tail = ` they said: "${latest.slice(0, 100)}". ur reply:`;
   let budget = 450 - persona.length - tail.length;
   const turnsText = history
     .slice(-3)
