@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AddBotWizard from "./AddBotWizard";
 import { BotItem, BotStatus, LogEntry } from "./types";
 import BotDetailView from "./BotDetailView";
 
@@ -208,7 +209,7 @@ export default function BotDashboard() {
       )}
 
       {showAdd && (
-        <AddBotModal
+        <AddBotWizard
           onClose={() => setShowAdd(false)}
           onCreated={() => {
             setShowAdd(false);
@@ -433,7 +434,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function AddBotModal({
+export function AddBotModal({
   onClose,
   onCreated,
 }: {

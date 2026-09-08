@@ -212,7 +212,7 @@ function decodeJwtPayload(token: string): Record<string, any> | null {
   }
 }
 
-async function resolveProfile(token: string): Promise<MinecraftProfile> {
+export async function resolveProfile(token: string): Promise<MinecraftProfile> {
   // 1. Try decoding the profile directly from the token (Yggdrasil / SSID format)
   const payload = decodeJwtPayload(token);
   if (payload) { 

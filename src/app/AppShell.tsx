@@ -7,6 +7,7 @@ import SettingsPanel from "./SettingsPanel";
 import TrainAiPanel from "./TrainAiPanel";
 import LicensePanel from "./LicensePanel";
 import ShopPanel from "./ShopPanel";
+import AdminAddBotPanel from "./AdminAddBotPanel";
 import { Logo } from "./Logo";
 
 type Me = {
@@ -19,7 +20,7 @@ type Me = {
   isGuest: boolean;
 };
 
-type Tab = "dashboard" | "license" | "shop" | "admin" | "train" | "settings";
+type Tab = "dashboard" | "license" | "shop" | "admin" | "addbot" | "train" | "settings";
 
 export default function AppShell() {
   const [me, setMe] = useState<Me | null>(null);
@@ -27,6 +28,29 @@ export default function AppShell() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [mobileNav, setMobileNav] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("mcbm:sidebar-collapsed") !== "1") return;
+    } catch {
+      return;
+    }
+    // deferred a tick: no sync setState in the effect, and the width
+    // transition makes the restore look intentional instead of a pop
+    const id = setTimeout(() => setCollapsed(true), 0);
+    return () => clearTimeout(id);
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem("mcbm:sidebar-collapsed", next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  }
 
   const loadMe = useCallback(async () => {
     try {
@@ -104,6 +128,7 @@ export default function AppShell() {
     ...(me.role === "admin"
       ? [
           { key: "admin" as Tab, label: "Admin", icon: <ShieldIcon /> },
+          { key: "addbot" as Tab, label: "Add Bots", icon: <PlusBotIcon /> },
           { key: "train" as Tab, label: "Train AI", icon: <BrainIcon /> },
         ]
       : []),
@@ -113,36 +138,52 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen">
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-all duration-300 lg:translate-x-0 ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${collapsed ? "lg:w-[76px]" : "lg:w-64"}`}
       >
-        <div className="flex items-center gap-3 px-5 py-5">
-          <Logo size={40} className="drop-shadow-[0_4px_16px_rgba(16,185,129,0.35)]" />
-          <div className="leading-tight">
-            <div className="text-sm font-bold tracking-tight">
-              MC Bot Manager
+        <div className={`flex items-center gap-3 py-5 ${collapsed ? "justify-center px-3 lg:flex-col lg:gap-2" : "px-5"}`}>
+          <Logo size={collapsed ? 32 : 40} className="drop-shadow-[0_4px_16px_rgba(16,185,129,0.35)]" />
+          {!collapsed && (
+            <div className="leading-tight">
+              <div className="text-sm font-bold tracking-tight">
+                MC Bot Manager
+              </div>
+              <div className="text-[11px] text-slate-500">control center</div>
             </div>
-            <div className="text-[11px] text-slate-500">control center</div>
-          </div>
+          )}
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={`hidden h-7 w-7 shrink-0 place-items-center rounded-lg border border-slate-800 text-slate-500 transition hover:text-slate-200 lg:grid ${
+              collapsed ? "" : "ml-auto"
+            }`}
+          >
+            <CollapseIcon collapsed={collapsed} />
+          </button>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
           {navItems.map((item) => (
             <button
               key={item.key}
+              title={item.label}
               onClick={() => {
                 setTab(item.key);
                 setMobileNav(false);
               }}
-              className={`group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all ${
+              className={`group flex items-center rounded-xl text-sm font-medium transition-all ${
+                collapsed
+                  ? "justify-center px-0 py-2.5"
+                  : "gap-3 px-3.5 py-2.5"
+              } ${
                 tab === item.key
                   ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 text-emerald-300 ring-1 ring-emerald-500/20"
                   : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
               }`}
             >
               <span
-                className={`grid h-8 w-8 place-items-center rounded-lg transition ${
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition ${
                   tab === item.key
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "bg-slate-800/60 text-slate-400 group-hover:text-slate-200"
@@ -150,8 +191,8 @@ export default function AppShell() {
               >
                 {item.icon}
               </span>
-              {item.label}
-              {tab === item.key && (
+              {!collapsed && item.label}
+              {!collapsed && tab === item.key && (
                 <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
               )}
             </button>
@@ -159,7 +200,7 @@ export default function AppShell() {
         </nav>
 
         <div className="border-t border-slate-800/80 p-3">
-          <div className="flex items-center gap-3 rounded-xl bg-slate-900/60 p-3">
+          <div className={`flex items-center gap-3 rounded-xl bg-slate-900/60 p-3 ${collapsed ? "lg:justify-center lg:gap-0 lg:p-2" : ""}`}>
             {me.avatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={me.avatar} alt="" className="h-9 w-9 rounded-full" />
@@ -168,7 +209,7 @@ export default function AppShell() {
                 {me.username.slice(0, 2).toUpperCase()}
               </div>
             )}
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-sm font-semibold">
                   {me.username}
@@ -186,9 +227,12 @@ export default function AppShell() {
           </div>
           <button
             onClick={logout}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300"
+            title="Logout"
+            className={`mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-800 px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300 ${
+              collapsed ? "lg:px-1" : ""
+            }`}
           >
-            <LogoutIcon /> Logout
+            <LogoutIcon /> {!collapsed && "Logout"}
           </button>
         </div>
       </aside>
@@ -200,7 +244,7 @@ export default function AppShell() {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+      <div className={`flex min-w-0 flex-1 flex-col transition-all duration-300 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
         <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center gap-2">
             <Logo size={28} />
@@ -221,6 +265,9 @@ export default function AppShell() {
             {tab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}
             {tab === "admin" && me.role === "admin" && (
               <AdminPanel meId={me.id} />
+            )}
+            {tab === "addbot" && me.role === "admin" && (
+              <AdminAddBotPanel />
             )}
             {tab === "train" && me.role === "admin" && <TrainAiPanel />}
             {tab === "settings" && <SettingsPanel me={me} onChange={loadMe} />}
@@ -411,6 +458,22 @@ function DiscordIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
       <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.036A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+    </svg>
+  );
+}
+function PlusBotIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="8" width="16" height="12" rx="3" />
+      <path d="M12 4v4M9 14h.01M15 14h.01M2 13v2M22 13v2" />
+      <path d="M17 1v6M14 4h6" />
+    </svg>
+  );
+}
+function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d={collapsed ? "M9 18l6-6-6-6" : "M15 18l-6-6 6-6"} />
     </svg>
   );
 }
