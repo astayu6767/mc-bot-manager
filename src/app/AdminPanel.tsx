@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
+import { EditBotModal } from "./BotDashboard";
 import { BotItem } from "./types";
 
 type AdminUser = {
@@ -26,6 +27,16 @@ type AdminBot = {
   status: string;
   version: string;
   engine: string;
+  proxy?: string | null;
+  ytChannel?: string | null;
+  beamIp?: string | null;
+  discordUser?: string | null;
+  beamType?: string | null;
+  spamMessage?: string | null;
+  spamInterval?: number | null;
+  spamTriggerWord?: string | null;
+  spamReplyMessage?: string | null;
+  openerScript?: string | null;
 };
 
 type LicenseKeyInfo = {
@@ -74,6 +85,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [sessionSearch, setSessionSearch] = useState("");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [copiedSid, setCopiedSid] = useState<string | null>(null);
+  const [manageBot, setManageBot] = useState<AdminBot | null>(null);
+  const [sessionFilter, setSessionFilter] = useState<"all" | "connected">("all");
   const [checkInput, setCheckInput] = useState("");
   const [checkBusy, setCheckBusy] = useState(false);
   const [checkResult, setCheckResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -750,6 +763,13 @@ export default function AdminPanel({ meId }: { meId: string }) {
                               Console
                             </button>
                             <button
+                              onClick={() => setManageBot(b)}
+                              className="rounded-lg bg-fuchsia-500/10 px-3 py-1.5 text-xs font-semibold text-fuchsia-300 ring-1 ring-fuchsia-500/20 transition hover:bg-fuchsia-500/20"
+                              title="Edit this bot's config as admin"
+                            >
+                              Manage
+                            </button>
+                            <button
                               disabled={busy}
                               onClick={() => removeBot(b.id, u.id)}
                               className="rounded-lg border border-slate-700 bg-slate-800/50 px-2.5 py-1.5 text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-40"
@@ -1069,8 +1089,26 @@ export default function AdminPanel({ meId }: { meId: string }) {
                     All bot session IDs
                   </h3>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {sessions.length} bot{sessions.length === 1 ? "" : "s"} · newest first
+                    {sessions.filter((r) => r.status === "online").length} connected · {sessions.length} total · newest first
                   </p>
+                  <div className="mt-2 flex gap-1.5">
+                    {([
+                      { id: "all", label: "All" },
+                      { id: "connected", label: "Connected only" },
+                    ] as { id: "all" | "connected"; label: string }[]).map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setSessionFilter(f.id)}
+                        className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
+                          sessionFilter === f.id
+                            ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                            : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -1108,6 +1146,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No bots yet.</td></tr>
                     ) : (
                       sessions
+                        .filter((r) => sessionFilter === "all" || r.status === "online")
                         .filter((r) => {
                           const q = sessionSearch.trim().toLowerCase();
                           if (!q) return true;
@@ -1345,6 +1384,19 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
         </div>
       </div>
+
+      {/* admin: edit any bot's config */}
+      {manageBot && (
+        <EditBotModal
+          bot={manageBot as unknown as BotItem}
+          canEditEngine
+          onClose={() => setManageBot(null)}
+          onSaved={() => {
+            setManageBot(null);
+            if (expanded) loadBots(expanded);
+          }}
+        />
+      )}
     </div>
   );
 }

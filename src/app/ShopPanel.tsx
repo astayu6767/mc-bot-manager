@@ -395,13 +395,23 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
                   <button
                     onClick={() => handleBuy(plan)}
                     disabled={!!buying}
-                    className={`w-full rounded-xl py-2.5 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50 ${
+                    className={`group/buy relative w-full overflow-hidden rounded-2xl py-3 text-xs font-bold tracking-wide transition-all duration-200 active:scale-[0.98] disabled:opacity-50 ${
                       plan.popular
-                        ? "bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-[0_4px_14px_rgba(99,102,241,0.3)] hover:from-indigo-400 hover:to-blue-500"
-                        : "border border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-500 hover:bg-slate-800"
+                        ? "bg-gradient-to-r from-indigo-500 via-indigo-500 to-blue-600 text-white shadow-[0_6px_20px_rgba(99,102,241,0.35)] hover:shadow-[0_10px_28px_rgba(99,102,241,0.45)] hover:brightness-110"
+                        : "border border-emerald-500/25 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-500/15"
                     }`}
                   >
-                    {buying === plan.id ? "Creating invoice…" : `Get ${plan.tier}`}
+                    <span className="relative z-10 flex items-center justify-center gap-1.5">
+                      {buying === plan.id
+                        ? "Creating invoice…"
+                        : `Get ${plan.tier}`}
+                      {buying !== plan.id && (
+                        <span className="transition-transform duration-200 group-hover/buy:translate-x-0.5">→</span>
+                      )}
+                    </span>
+                    {plan.popular && (
+                      <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-white/0 via-white/15 to-white/0 transition-transform duration-700 group-hover/buy:translate-x-full" />
+                    )}
                   </button>
                 </div>
               </div>

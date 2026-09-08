@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { resolveProfile } from "@/lib/botManager";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,9 +25,21 @@ export async function POST(req: Request) {
     return Response.json({ error: "A session ID is required" }, { status: 400 });
   }
 
+  // This endpoint validates credentials — throttle probing hard.
+  const rl = rateLimit(`resolve:${user.id}`, 15, 60_000);
+  if (!rl.ok) {
+    return Response.json(
+      { error: `Too many checks — retry in ${rl.retryAfterSec}s` },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
+  }
+
   try {
     const profile = await resolveProfile(token);
-    return Response.json({ name: profile.name, id: profile.id });
+    return Response.json(
+      { name: profile.name, id: profile.id },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (err) {
     return Response.json(
       {

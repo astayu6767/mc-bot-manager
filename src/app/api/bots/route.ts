@@ -55,7 +55,7 @@ export async function GET() {
     slots: licenseStatus.totalSlots,
     used: data.length,
     licenseStatus,
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request) {

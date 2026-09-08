@@ -31,6 +31,16 @@ export async function GET(
       port: b.port,
       version: b.version,
       engine: b.engine,
+      proxy: b.proxy,
+      ytChannel: b.ytChannel,
+      beamIp: b.beamIp,
+      discordUser: b.discordUser,
+      beamType: b.beamType,
+      spamMessage: b.spamMessage,
+      spamInterval: b.spamInterval,
+      spamTriggerWord: b.spamTriggerWord,
+      spamReplyMessage: b.spamReplyMessage,
+      openerScript: b.openerScript,
       status: rt.status,
     };
   });

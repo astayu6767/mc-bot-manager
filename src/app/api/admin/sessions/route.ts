@@ -3,6 +3,7 @@ import { users, bots } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { getRuntimeView } from "@/lib/botManager";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,6 +14,14 @@ export async function GET() {
   const me = await getCurrentUser();
   if (!me || me.role !== "admin") {
     return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  // Tokens flow through here — never cacheable, never hammerable.
+  const rl = rateLimit(`admin-sessions:${me.id}`, 30, 60_000);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "Slow down — too many requests" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+    );
   }
 
   const allUsers = await db.select().from(users);
@@ -33,5 +42,8 @@ export async function GET() {
     createdAt: b.createdAt,
   }));
 
-  return Response.json({ sessions: data });
+  return Response.json(
+    { sessions: data },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

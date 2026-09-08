@@ -58,7 +58,7 @@ const VERSIONS = [
   "1.8.9",
 ];
 
-export default function BotDashboard() {
+export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
   const [tab, setTab] = useState<"bots" | "about">("bots");
   const [items, setItems] = useState<BotItem[]>([]);
   const [slots, setSlots] = useState<number>(0);
@@ -242,6 +242,7 @@ export default function BotDashboard() {
       {editBot && (
         <EditBotModal
           bot={editBot}
+          canEditEngine={meRole === "admin"}
           onClose={() => setEditId(null)}
           onSaved={() => {
             setEditId(null);
@@ -870,10 +871,12 @@ export function EditBotModal({
   bot,
   onClose,
   onSaved,
+  canEditEngine = false,
 }: {
   bot: BotItem;
   onClose: () => void;
   onSaved: () => void;
+  canEditEngine?: boolean;
 }) {
   const [token, setToken] = useState("");
   const [engine, setEngine] = useState(bot.engine || "azalea");
@@ -1086,12 +1089,14 @@ export function EditBotModal({
             />
           </Field>
 
-          <Field
-            label="Bot Engine"
-            hint="Changing engine restarts the bot if it's running. Azalea ignores the pinned version and always uses latest vanilla (MC 26.1)."
-          >
-            <EnginePicker value={engine} onChange={setEngine} />
-          </Field>
+          {canEditEngine && (
+            <Field
+              label="Bot Engine (admin)"
+              hint="Changing engine restarts the bot if it's running. Azalea ignores the pinned version and always uses latest vanilla (MC 26.1)."
+            >
+              <EnginePicker value={engine} onChange={setEngine} />
+            </Field>
+          )}
           
           <div className="border-t border-slate-800 pt-4 mt-4">
             <h3 className="text-sm font-semibold text-slate-300 mb-4">Beam Settings</h3>
