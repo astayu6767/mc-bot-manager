@@ -323,9 +323,9 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
         </div>
       </div>
 
-      {/* plan cards */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {plans.map((plan) => {
+      {/* plan cards — staggered heights: each tier stands a bit taller */}
+      <div className="mt-6 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {plans.map((plan, planIdx) => {
           const isDiscounted = plan.discount > 0;
           const displayPrice = plan.finalPrice ?? plan.price;
           const originalPrice = plan.price;
@@ -333,6 +333,12 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
             <div
               key={plan.id}
               className={`group relative flex flex-col rounded-2xl border p-[1px] transition duration-200 hover:-translate-y-0.5 ${
+                [
+                  "min-h-[440px]",
+                  "min-h-[520px]",
+                  "min-h-[600px]",
+                ][planIdx % 3]
+              } ${
                 plan.popular
                   ? "border-violet-500/40 bg-gradient-to-b from-violet-500/20 to-indigo-500/10 shadow-[0_0_28px_rgba(99,102,241,0.18)]"
                   : "border-slate-800 bg-slate-800/20 hover:border-slate-600"
@@ -406,7 +412,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
 
       {/* invoice history */}
       {myInvoices.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-16">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-300">Your invoices</h3>
             <span className="text-[11px] text-slate-500">{myInvoices.length} total</span>

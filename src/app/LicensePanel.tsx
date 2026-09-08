@@ -88,7 +88,7 @@ export default function LicensePanel() {
     return (
       <div className="grid place-items-center py-20">
         <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-amber-400" />
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400" />
           Loading licenses…
         </div>
       </div>
@@ -105,14 +105,14 @@ export default function LicensePanel() {
     <div className="relative">
       {/* background glow */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-[-40px] top-[-40px] h-[260px] w-[260px] rounded-full bg-amber-400/[0.08] blur-[80px]" />
-        <div className="absolute right-[-20px] top-[80px] h-[200px] w-[200px] rounded-full bg-orange-400/[0.06] blur-[80px]" />
+        <div className="absolute left-[-40px] top-[-40px] h-[260px] w-[260px] rounded-full bg-emerald-400/[0.07] blur-[80px]" />
+        <div className="absolute right-[-20px] top-[80px] h-[200px] w-[200px] rounded-full bg-teal-400/[0.05] blur-[80px]" />
       </div>
 
       <div className="flex items-start gap-4">
         <div className="relative">
-          <div className="absolute inset-0 rounded-[16px] bg-gradient-to-br from-amber-300 to-amber-500 blur-[14px] opacity-50" />
-          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 shadow-[0_8px_24px_rgba(251,191,36,0.28)] ring-1 ring-white/15">
+          <div className="absolute inset-0 rounded-[16px] bg-gradient-to-br from-emerald-300 to-emerald-500 blur-[14px] opacity-50" />
+          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 shadow-[0_8px_24px_rgba(16,185,129,0.28)] ring-1 ring-white/15">
             <TicketThumbIcon />
             <div className="absolute inset-0 rounded-[16px] bg-gradient-to-tr from-white/25 to-transparent" />
           </div>
@@ -121,7 +121,7 @@ export default function LicensePanel() {
           <h2 className="text-[20px] font-bold tracking-tight text-white">License</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-slate-400">
             Redeem a license key to get bot slots. Keys look like{" "}
-            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-amber-300 ring-1 ring-amber-500/20">abeam-key-xxxx-xxxx</span>
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-emerald-300 ring-1 ring-emerald-500/20">abeam-key-xxxx-xxxx</span>
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-[11px] text-slate-400 backdrop-blur">
@@ -131,29 +131,29 @@ export default function LicensePanel() {
       </div>
 
       <div className="mt-7 grid grid-cols-3 gap-3">
-        <StatCard label="TOTAL SLOTS" value={status.totalSlots} accent="text-amber-300" sub="max bots" icon={<SlotsIcon />} gradient="from-amber-500/15 to-orange-500/10" />
+        <StatCard label="TOTAL SLOTS" value={status.totalSlots} accent="text-emerald-300" sub="max bots" icon={<SlotsIcon />} gradient="from-emerald-500/15 to-teal-500/10" />
         <StatCard label="USED" value={status.usedSlots} accent="text-slate-100" sub="running" icon={<UsedIcon />} gradient="from-slate-700/40 to-slate-800/20" />
         <StatCard label="AVAILABLE" value={status.availableSlots} accent="text-emerald-300" sub="free" icon={<AvailableIcon />} gradient="from-emerald-500/15 to-teal-500/10" />
       </div>
 
       {/* Redeem section */}
       <div className="group mt-6 relative overflow-hidden rounded-[18px] border border-slate-800 bg-slate-900/70 p-[1px] backdrop-blur-xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 via-transparent to-orange-400/10 opacity-0 transition-opacity group-hover:opacity-100" />
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/10 via-transparent to-teal-400/10 opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="relative rounded-[17px] bg-[#0f121f]/80 p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="flex items-center gap-2 text-[14px] font-semibold text-white">
-                <span className="grid h-6 w-6 place-items-center rounded-lg bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20">
+                <span className="grid h-6 w-6 place-items-center rounded-lg bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20">
                   <KeyIcon />
                 </span>
                 Redeem License Key
               </h3>
               <p className="mt-1 text-[12px] leading-relaxed text-slate-400">
-                Enter your key like <code className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-amber-300">abeam-key-aqiwok192k</code> to unlock slots instantly
+                Enter your key like <code className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-emerald-300">abeam-key-aqiwok192k</code> to unlock slots instantly
               </p>
             </div>
             <div className="hidden sm:flex items-center gap-1 rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-slate-700/50">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               Secure redeem
             </div>
           </div>
@@ -165,7 +165,7 @@ export default function LicensePanel() {
                 onChange={(e) => setKeyInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && redeem()}
                 placeholder="abeam-key-xxxxxxxxxx-xxxxxx"
-                className="w-full rounded-xl border border-slate-700/80 bg-slate-950/70 px-4 py-3.5 pr-10 text-[13px] font-mono tracking-wide text-slate-100 placeholder:text-slate-600 outline-none transition focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20"
+                className="w-full rounded-xl border border-slate-700/80 bg-slate-950/70 px-4 py-3.5 pr-10 text-[13px] font-mono tracking-wide text-slate-100 placeholder:text-slate-600 outline-none transition focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20"
               />
               <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-600">
                 <TicketSmallIcon />
@@ -174,7 +174,7 @@ export default function LicensePanel() {
             <button
               onClick={redeem}
               disabled={redeeming}
-              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 px-7 py-3.5 text-[13px] font-bold text-amber-950 shadow-[0_8px_24px_rgba(251,191,36,0.25)] transition-all hover:from-amber-200 hover:to-amber-400 hover:shadow-[0_12px_32px_rgba(251,191,36,0.35)] active:scale-[0.98] disabled:opacity-50"
+              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 px-7 py-3.5 text-[13px] font-bold text-emerald-950 shadow-[0_8px_24px_rgba(16,185,129,0.25)] transition-all hover:from-emerald-300 hover:to-emerald-400 hover:shadow-[0_12px_32px_rgba(16,185,129,0.35)] active:scale-[0.98] disabled:opacity-50"
             >
               <span className="relative z-10 flex items-center gap-1.5">
                 {redeeming ? "Redeeming…" : "Redeem"}
@@ -202,11 +202,11 @@ export default function LicensePanel() {
       </div>
 
       {!hasLicense ? (
-        <div className="mt-6 relative overflow-hidden rounded-[18px] border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-orange-500/[0.05] p-[1px]">
+        <div className="mt-6 relative overflow-hidden rounded-[18px] border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-[1px]">
           <div className="rounded-[17px] bg-slate-900/80 p-8 text-center backdrop-blur">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-amber-500/10 text-3xl ring-1 ring-amber-500/20">🔒</div>
-            <h3 className="mt-4 text-[15px] font-semibold text-amber-200">No active license</h3>
-            <p className="mx-auto mt-2 max-w-[420px] text-[12px] leading-relaxed text-amber-200/60">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-emerald-500/10 text-3xl ring-1 ring-emerald-500/20">🔒</div>
+            <h3 className="mt-4 text-[15px] font-semibold text-slate-200">No active license</h3>
+            <p className="mx-auto mt-2 max-w-[420px] text-[12px] leading-relaxed text-slate-400">
               You start with 0 bot slots. Redeem a key above to get slots.
               <br />
               License decides how many slots and for how long (days/hours) they stay.
@@ -255,19 +255,6 @@ export default function LicensePanel() {
             </div>
           </div>
 
-          {status.expiredLicenses.length > 0 && (
-            <div>
-              <h3 className="flex items-center gap-2 text-[13px] font-semibold tracking-wide text-slate-500">
-                <span className="h-1 w-1 rounded-full bg-slate-600" />
-                Expired / Inactive
-              </h3>
-              <div className="mt-3 space-y-2.5">
-                {status.expiredLicenses.map((lic) => (
-                  <LicenseCard key={lic.id} lic={lic} expired />
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -286,7 +273,7 @@ function LicenseCard({ lic, expired }: { lic: LicenseInfo; expired?: boolean }) 
               {lic.durationDays}d {lic.durationHours}h
             </span>
           </div>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${expired ? "bg-slate-800 text-slate-500" : "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/20"}`}>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${expired ? "bg-slate-800 text-slate-500" : "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20"}`}>
             {lic.timeLeft}
           </span>
         </div>
@@ -297,7 +284,7 @@ function LicenseCard({ lic, expired }: { lic: LicenseInfo; expired?: boolean }) 
           {lic.reason && (
             <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 ring-1 ring-slate-700/30">{lic.reason}</span>
           )}
-          {lic.licenseKey && <span className="font-mono text-amber-300/50">· {lic.licenseKey.slice(0, 22)}...</span>}
+          {lic.licenseKey && <span className="font-mono text-emerald-300/50">· {lic.licenseKey.slice(0, 22)}...</span>}
         </div>
       </div>
     </div>

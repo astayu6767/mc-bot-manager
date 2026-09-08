@@ -60,6 +60,9 @@ type LicenseInfo = {
 };
 
 export default function AdminPanel({ meId }: { meId: string }) {
+  // Sub-sidebar sections — the admin area is too big for one scrolling page.
+  type AdminSection = "overview" | "users" | "licenses" | "shop";
+  const [section, setSection] = useState<AdminSection>("overview");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -420,6 +423,36 @@ export default function AdminPanel({ meId }: { meId: string }) {
         </div>
       </div>
 
+
+      {/* sub-sidebar: pick what to manage */}
+      <div className="mt-5 flex flex-col gap-6 lg:flex-row">
+        <aside className="shrink-0 lg:w-52">
+          <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 p-1.5 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible">
+            {([
+              { id: "overview", label: "Overview", icon: "📊" },
+              { id: "users", label: "Users", icon: "👥" },
+              { id: "licenses", label: "Licenses", icon: "🎫" },
+              { id: "shop", label: "Shop Management", icon: "🛒" },
+            ] as { id: AdminSection; label: string; icon: string }[]).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                className={`flex shrink-0 items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
+                  section === item.id
+                    ? "bg-gradient-to-r from-fuchsia-500/15 to-fuchsia-500/5 text-fuchsia-200 ring-1 ring-fuchsia-500/25"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          {section === "overview" && (
+            <div className="animate-fade-in">
       <div className="mt-5 grid grid-cols-3 gap-3">
         <StatCard label="Users" value={totalUsers} accent="text-sky-300" />
         <StatCard label="Total bots" value={totalBots} accent="text-slate-200" />
@@ -429,7 +462,28 @@ export default function AdminPanel({ meId }: { meId: string }) {
           accent="text-emerald-300"
         />
       </div>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {([
+                  { id: "users", label: "Manage users", sub: "accounts, slots, bots", icon: "👥" },
+                  { id: "licenses", label: "License keys", sub: "generate, redeem, revoke", icon: "🎫" },
+                  { id: "shop", label: "Shop management", sub: "plans, LTC, invoices", icon: "🛒" },
+                ] as { id: AdminSection; label: string; sub: string; icon: string }[]).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setSection(c.id)}
+                    className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-left transition hover:-translate-y-0.5 hover:border-fuchsia-500/30"
+                  >
+                    <div className="text-xl">{c.icon}</div>
+                    <div className="mt-2 text-sm font-semibold text-white">{c.label}</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">{c.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
+          {section === "users" && (
+            <div className="animate-fade-in">
       {/* Create Account */}
       <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
         <h3 className="text-sm font-semibold text-slate-200">Create Account (username/password)</h3>
@@ -642,7 +696,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
           ))
         )}
       </div>
+            </div>
+          )}
 
+          {section === "licenses" && (
+            <div className="animate-fade-in">
       {/* License Management - premium UI */}
       <div className="mt-10">
         <div className="relative overflow-hidden rounded-[20px] border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] via-orange-500/[0.05] to-slate-900/60 p-[1px]">
@@ -899,7 +957,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
         </div>
       </div>
+            </div>
+          )}
 
+          {section === "shop" && (
+            <div className="animate-fade-in">
       {/* Shop Management */}
       <div className="mt-10">
         <div className="relative overflow-hidden rounded-[20px] border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.08] via-indigo-500/[0.05] to-slate-900/60 p-[1px]">
@@ -1074,6 +1136,10 @@ export default function AdminPanel({ meId }: { meId: string }) {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

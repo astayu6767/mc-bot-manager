@@ -218,7 +218,7 @@ export default function AddBotWizard({
                     i < step
                       ? "bg-emerald-500/20 text-emerald-300"
                       : i === step
-                        ? "bg-emerald-500 text-emerald-950"
+                        ? "scale-110 bg-emerald-500 text-emerald-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
                         : "bg-slate-800 text-slate-500"
                   }`}
                 >
@@ -240,8 +240,8 @@ export default function AddBotWizard({
             ))}
           </div>
 
-          {/* body */}
-          <div className="flex-1 overflow-y-auto p-6">
+          {/* body — keyed by step so each pane animates in */}
+          <div key={step} className="flex-1 overflow-y-auto p-6 animate-fade-in">
             {step === 0 && (
               <div className="space-y-4">
                 <Field label="Session ID">
@@ -292,7 +292,7 @@ export default function AddBotWizard({
                       key={s.id}
                       type="button"
                       onClick={() => setServerId(s.id)}
-                      className={`flex flex-col items-center gap-3 rounded-2xl border bg-gradient-to-b p-5 transition ${s.accent} ${
+                      className={`flex flex-col items-center gap-3 rounded-2xl border bg-gradient-to-b p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${s.accent} ${
                         on
                           ? `border-white/20 ring-2 ${s.ring}`
                           : "border-slate-700/80 hover:border-slate-500"
@@ -322,7 +322,7 @@ export default function AddBotWizard({
                       key={r.id}
                       type="button"
                       onClick={() => setRegion(r.id)}
-                      className={`rounded-xl border px-3 py-4 text-center transition ${
+                      className={`rounded-xl border px-3 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 ${
                         on
                           ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
                           : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
@@ -347,7 +347,7 @@ export default function AddBotWizard({
                       key={m.id}
                       type="button"
                       onClick={() => setBeamMode(m.id)}
-                      className={`rounded-xl border px-3.5 py-3 text-left transition ${
+                      className={`rounded-xl border px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
                         on
                           ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
                           : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
@@ -480,7 +480,7 @@ export default function AddBotWizard({
               <button
                 onClick={() => canNext() && setStep(step + 1)}
                 disabled={!canNext() || checking}
-                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
               >
                 Next
               </button>
@@ -488,7 +488,7 @@ export default function AddBotWizard({
               <button
                 onClick={() => void create()}
                 disabled={creating}
-                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
               >
                 {creating ? "Creating…" : "Create & connect"}
               </button>
