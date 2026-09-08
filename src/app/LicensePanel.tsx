@@ -105,14 +105,14 @@ export default function LicensePanel() {
     <div className="relative">
       {/* background glow */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-[-40px] top-[-40px] h-[260px] w-[260px] rounded-full bg-amber-500/10 blur-[80px]" />
-        <div className="absolute right-[-20px] top-[80px] h-[200px] w-[200px] rounded-full bg-orange-500/10 blur-[80px]" />
+        <div className="absolute left-[-40px] top-[-40px] h-[260px] w-[260px] rounded-full bg-amber-400/[0.08] blur-[80px]" />
+        <div className="absolute right-[-20px] top-[80px] h-[200px] w-[200px] rounded-full bg-orange-400/[0.06] blur-[80px]" />
       </div>
 
       <div className="flex items-start gap-4">
         <div className="relative">
-          <div className="absolute inset-0 rounded-[16px] bg-gradient-to-br from-amber-400 to-orange-600 blur-[14px] opacity-50" />
-          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 shadow-[0_8px_24px_rgba(245,158,11,0.35)] ring-1 ring-white/15">
+          <div className="absolute inset-0 rounded-[16px] bg-gradient-to-br from-amber-300 to-amber-500 blur-[14px] opacity-50" />
+          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 shadow-[0_8px_24px_rgba(251,191,36,0.28)] ring-1 ring-white/15">
             <TicketThumbIcon />
             <div className="absolute inset-0 rounded-[16px] bg-gradient-to-tr from-white/25 to-transparent" />
           </div>
@@ -138,7 +138,7 @@ export default function LicensePanel() {
 
       {/* Redeem section */}
       <div className="group mt-6 relative overflow-hidden rounded-[18px] border border-slate-800 bg-slate-900/70 p-[1px] backdrop-blur-xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10 opacity-0 transition-opacity group-hover:opacity-100" />
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-400/10 via-transparent to-orange-400/10 opacity-0 transition-opacity group-hover:opacity-100" />
         <div className="relative rounded-[17px] bg-[#0f121f]/80 p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -174,7 +174,7 @@ export default function LicensePanel() {
             <button
               onClick={redeem}
               disabled={redeeming}
-              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 px-7 py-3.5 text-[13px] font-bold text-amber-950 shadow-[0_8px_24px_rgba(245,158,11,0.3)] transition-all hover:from-amber-300 hover:to-orange-500 hover:shadow-[0_12px_32px_rgba(245,158,11,0.4)] active:scale-[0.98] disabled:opacity-50"
+              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 px-7 py-3.5 text-[13px] font-bold text-amber-950 shadow-[0_8px_24px_rgba(251,191,36,0.25)] transition-all hover:from-amber-200 hover:to-amber-400 hover:shadow-[0_12px_32px_rgba(251,191,36,0.35)] active:scale-[0.98] disabled:opacity-50"
             >
               <span className="relative z-10 flex items-center gap-1.5">
                 {redeeming ? "Redeeming…" : "Redeem"}

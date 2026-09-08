@@ -3,33 +3,18 @@
 import { useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
-// Add-bot wizard (the new, simple flow):
-//   1. paste session ID  -> the account's IGN is fetched and shown
-//   2. pick an engine     (azalea / mineflayer / nmp)
-//   3. pick a server      (minemen.club / mcpvp.club, with their icons)
-//   4. pick a proxy region (eu / as / na) -> create & connect
-// The old full-form model still exists for admins (AdminAddBotPanel).
+// Add-bot wizard (quick flow for everyone):
+//   1. paste session ID -> the account's IGN is fetched and shown
+//   2. pick a server   (minemen.club / mcpvp.club, with their icons)
+//   3. pick a proxy    (eu / as / na)
+//   4. pick beaming mode:
+//      - 1v1 Player Method -> opener script (editable default) + discord
+//      - Adbot (standing)  -> lobby message, trigger word, reply message
+//   5. create & connect (engine defaults to azalea)
+// The old advanced form lives in the admin-only "Add Bots" tab.
 // ---------------------------------------------------------------------------
 
 type Profile = { name: string; id: string };
-
-const WIZARD_ENGINES: { id: string; title: string; blurb: string }[] = [
-  {
-    id: "azalea",
-    title: "Azalea (Rust)",
-    blurb: "Vanilla-like physics. Latest MC protocol. Best for PvP servers.",
-  },
-  {
-    id: "mineflayer",
-    title: "Mineflayer",
-    blurb: "Full radar, inventory, beam. Fingerprinted on many PvP networks.",
-  },
-  {
-    id: "nmp",
-    title: "Raw NMP",
-    blurb: "Thin minecraft-protocol session. Console + chat only.",
-  },
-];
 
 const SERVERS = [
   {
@@ -58,7 +43,27 @@ const REGIONS = [
   { id: "na", label: "NA", blurb: "North America proxy" },
 ];
 
-const STEP_LABELS = ["Session", "Engine", "Server", "Proxy"];
+const BEAM_MODES = [
+  {
+    id: "ai",
+    title: "1v1 Player Method",
+    blurb:
+      "Joins matches, chats with AI to recruit a teammate, gets their discord.",
+    icon: "⚔️",
+  },
+  {
+    id: "lobby",
+    title: "Adbot (Standing Method)",
+    blurb:
+      "Stays in the lobby, advertises the trigger word, whispers repliers.",
+    icon: "📣",
+  },
+];
+
+const DEFAULT_OPENER =
+  "yo\nsup, could you help me ?\ncause im in a 2v2 event and i need a teamate ;[";
+
+const STEP_LABELS = ["Session", "Server", "Proxy", "Beaming", "Setup"];
 
 export default function AddBotWizard({
   onClose,
@@ -72,16 +77,22 @@ export default function AddBotWizard({
   const [profile, setProfile] = useState<Profile | null>(null);
   const [checking, setChecking] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
-  const [engine, setEngine] = useState("azalea");
   const [serverId, setServerId] = useState<string | null>(null);
   const [region, setRegion] = useState<string | null>(null);
+  const [beamMode, setBeamMode] = useState<string | null>(null);
+  // 1v1 method config
+  const [opener, setOpener] = useState(DEFAULT_OPENER);
+  const [discordUser, setDiscordUser] = useState("");
+  // adbot config
+  const [lobbyMsg, setLobbyMsg] = useState("type 123 in chat for tier test all mode");
+  const [triggerWord, setTriggerWord] = useState("123");
+  const [replyMsg, setReplyMsg] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const server = SERVERS.find((s) => s.id === serverId) ?? null;
 
-  // Auto-check the session id shortly after the user stops typing/pasting.
   function onTokenChange(v: string) {
     setToken(v);
     setProfile(null);
@@ -116,21 +127,31 @@ export default function AddBotWizard({
   }
 
   async function create() {
-    if (!profile || !server || !region) return;
+    if (!profile || !server || !region || !beamMode) return;
     setCreating(true);
     setCreateError(null);
     try {
+      const payload: Record<string, unknown> = {
+        name: profile.name,
+        token: token.trim(),
+        host: `${region}.${server.domain}`,
+        port: 25565,
+        version: "auto",
+        engine: "azalea",
+        beamType: beamMode,
+      };
+      if (beamMode === "ai") {
+        payload.openerScript = opener;
+        payload.discordUser = discordUser.trim();
+      } else {
+        payload.spamMessage = lobbyMsg;
+        payload.spamTriggerWord = triggerWord;
+        payload.spamReplyMessage = replyMsg;
+      }
       const res = await fetch("/api/bots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: profile.name,
-          token: token.trim(),
-          host: `${region}.${server.domain}`,
-          port: 25565,
-          version: "auto",
-          engine,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -145,8 +166,13 @@ export default function AddBotWizard({
     }
   }
 
-  const canNext =
-    step === 0 ? profile !== null : step === 2 ? serverId !== null : true;
+  function canNext(): boolean {
+    if (step === 0) return profile !== null;
+    if (step === 1) return serverId !== null;
+    if (step === 2) return region !== null;
+    if (step === 3) return beamMode !== null;
+    return true;
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
@@ -171,7 +197,7 @@ export default function AddBotWizard({
                   Add a bot
                 </h2>
                 <p className="text-xs font-medium text-slate-400">
-                  Session ID → verify → pick server. That&apos;s it.
+                  Session ID → server → proxy → beaming mode
                 </p>
               </div>
             </div>
@@ -258,40 +284,6 @@ export default function AddBotWizard({
             )}
 
             {step === 1 && (
-              <div className="grid gap-2">
-                {WIZARD_ENGINES.map((e) => {
-                  const on = engine === e.id;
-                  return (
-                    <button
-                      key={e.id}
-                      type="button"
-                      onClick={() => setEngine(e.id)}
-                      className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
-                        on
-                          ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
-                          : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-slate-100">
-                          {e.title}
-                        </span>
-                        {on && (
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-400">
-                            selected
-                          </span>
-                        )}
-                      </div>
-                      <span className="mt-0.5 block text-xs text-slate-400">
-                        {e.blurb}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {step === 2 && (
               <div className="grid grid-cols-2 gap-3">
                 {SERVERS.map((s) => {
                   const on = serverId === s.id;
@@ -321,62 +313,158 @@ export default function AddBotWizard({
               </div>
             )}
 
-            {step === 3 && server && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {REGIONS.map((r) => {
-                    const on = region === r.id;
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => setRegion(r.id)}
-                        className={`rounded-xl border px-3 py-4 text-center transition ${
-                          on
-                            ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
-                            : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
-                        }`}
-                      >
-                        <div className="text-lg font-bold text-white">
-                          {r.label}
-                        </div>
-                        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                          {r.blurb}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {region && (
-                  <div className="rounded-xl border border-slate-700/80 bg-slate-950/60 p-4 text-sm">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Summary
-                    </div>
-                    <ul className="space-y-1.5 text-slate-300">
-                      <li>
-                        Account: <b className="text-white">{profile?.name}</b>
-                      </li>
-                      <li>
-                        Engine:{" "}
-                        <b className="text-white">
-                          {WIZARD_ENGINES.find((e) => e.id === engine)?.title}
-                        </b>
-                      </li>
-                      <li>
-                        Server:{" "}
-                        <b className="text-white">
-                          {region}.{server.domain}
-                        </b>
-                      </li>
-                    </ul>
-                  </div>
-                )}
-                {createError && (
-                  <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300 ring-1 ring-rose-500/20">
-                    {createError}
-                  </p>
-                )}
+            {step === 2 && (
+              <div className="grid grid-cols-3 gap-3">
+                {REGIONS.map((r) => {
+                  const on = region === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setRegion(r.id)}
+                      className={`rounded-xl border px-3 py-4 text-center transition ${
+                        on
+                          ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
+                          : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
+                      }`}
+                    >
+                      <div className="text-lg font-bold text-white">{r.label}</div>
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                        {r.blurb}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+            )}
+
+            {step === 3 && (
+              <div className="grid gap-2">
+                {BEAM_MODES.map((m) => {
+                  const on = beamMode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setBeamMode(m.id)}
+                      className={`rounded-xl border px-3.5 py-3 text-left transition ${
+                        on
+                          ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
+                          : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-lg">{m.icon}</span>
+                        <span className="text-sm font-semibold text-slate-100">
+                          {m.title}
+                        </span>
+                        {on && (
+                          <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-emerald-400">
+                            selected
+                          </span>
+                        )}
+                      </div>
+                      <span className="mt-1 block pl-7 text-xs text-slate-400">
+                        {m.blurb}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {step === 4 && beamMode === "ai" && (
+              <div className="space-y-4">
+                <Field
+                  label="Opener script"
+                  hint="One message per line — the bot sends these to the teammate it finds. Edit freely."
+                >
+                  <textarea
+                    value={opener}
+                    onChange={(e) => setOpener(e.target.value)}
+                    rows={4}
+                    className={`${inputClass} resize-none`}
+                  />
+                </Field>
+                <Field
+                  label="Your Discord username"
+                  hint="The bot asks the teammate to add this on discord."
+                >
+                  <input
+                    value={discordUser}
+                    onChange={(e) => setDiscordUser(e.target.value)}
+                    placeholder="your discord"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            )}
+
+            {step === 4 && beamMode === "lobby" && (
+              <div className="space-y-4">
+                <Field
+                  label="Lobby message"
+                  hint="Sent in the lobby periodically — advertises the trigger word."
+                >
+                  <textarea
+                    value={lobbyMsg}
+                    onChange={(e) => setLobbyMsg(e.target.value)}
+                    rows={2}
+                    className={`${inputClass} resize-none`}
+                  />
+                </Field>
+                <Field label="Trigger word">
+                  <input
+                    value={triggerWord}
+                    onChange={(e) => setTriggerWord(e.target.value)}
+                    placeholder="123"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field
+                  label="Reply message"
+                  hint="Whispered ~10s after someone says the trigger word."
+                >
+                  <textarea
+                    value={replyMsg}
+                    onChange={(e) => setReplyMsg(e.target.value)}
+                    rows={2}
+                    placeholder="add my discord to join"
+                    className={`${inputClass} resize-none`}
+                  />
+                </Field>
+              </div>
+            )}
+
+            {step === 4 && server && region && (
+              <div className="mt-5 rounded-xl border border-slate-700/80 bg-slate-950/60 p-4 text-sm">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Summary
+                </div>
+                <ul className="space-y-1.5 text-slate-300">
+                  <li>
+                    Account: <b className="text-white">{profile?.name}</b>
+                  </li>
+                  <li>
+                    Server:{" "}
+                    <b className="text-white">
+                      {region}.{server.domain}
+                    </b>
+                  </li>
+                  <li>
+                    Mode:{" "}
+                    <b className="text-white">
+                      {BEAM_MODES.find((m) => m.id === beamMode)?.title}
+                    </b>
+                  </li>
+                </ul>
+              </div>
+            )}
+
+            {step === 4 && createError && (
+              <p className="mt-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300 ring-1 ring-rose-500/20">
+                {createError}
+              </p>
             )}
           </div>
 
@@ -388,10 +476,10 @@ export default function AddBotWizard({
             >
               {step === 0 ? "Cancel" : "← Back"}
             </button>
-            {step < 3 ? (
+            {step < 4 ? (
               <button
-                onClick={() => canNext && setStep(step + 1)}
-                disabled={!canNext || checking}
+                onClick={() => canNext() && setStep(step + 1)}
+                disabled={!canNext() || checking}
                 className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-40"
               >
                 Next
@@ -399,7 +487,7 @@ export default function AddBotWizard({
             ) : (
               <button
                 onClick={() => void create()}
-                disabled={!region || creating}
+                disabled={creating}
                 className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-40"
               >
                 {creating ? "Creating…" : "Create & connect"}
@@ -436,7 +524,6 @@ function HeadAvatar({ name }: { name: string }) {
 // Server icon straight from the live server ping (what the multiplayer
 // screen shows). Falls back to a clean wordmark tile if unreachable.
 function ServerLogo({ host, label }: { host: string; label: string }) {
-  // parent renders this with key={host} so state resets per server
   const [stage, setStage] = useState(0);
   const sources = [
     `https://api.mcsrvstat.us/3/icon/${host}`,
@@ -462,9 +549,11 @@ function ServerLogo({ host, label }: { host: string; label: string }) {
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -473,6 +562,7 @@ function Field({
         {label}
       </span>
       {children}
+      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </div>
   );
 }

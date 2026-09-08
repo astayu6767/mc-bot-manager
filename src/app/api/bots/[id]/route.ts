@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { notifyDiscord, whenCreated } from "@/lib/webhook";
 import { bots } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { stopBot, startBot } from "@/lib/botManager";
@@ -32,8 +33,19 @@ export async function DELETE(
   if (!auth.ok) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
+  const [existing] = await db.select().from(bots).where(eq(bots.id, id));
   await stopBot(id);
   await db.delete(bots).where(eq(bots.id, id));
+  notifyDiscord({
+    title: "🗑️ Bot deleted",
+    color: 0xf43f5e,
+    fields: [
+      { name: "Bot", value: existing?.name ?? id, inline: true },
+      { name: "Deleted by", value: auth.user?.username ?? "unknown", inline: true },
+      { name: "Server", value: existing ? `${existing.host}:${existing.port}` : "?", inline: true },
+      { name: "When", value: whenCreated() },
+    ],
+  });
   return Response.json({ ok: true });
 }
 

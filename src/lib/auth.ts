@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { notifyDiscord, whenCreated } from "@/lib/webhook";
 import { cookies } from "next/headers";
 import { db } from "@/db";
 import { users, bots, type User } from "@/db/schema";
@@ -181,6 +182,16 @@ export async function upsertDiscordUser(profile: {
       botSlots: 0,
     })
     .returning();
+  notifyDiscord({
+    title: "👤 New account created",
+    color: 0x5865f2,
+    fields: [
+      { name: "User", value: created.username, inline: true },
+      { name: "Type", value: "Discord", inline: true },
+      { name: "Role", value: created.role, inline: true },
+      { name: "When", value: whenCreated() },
+    ],
+  });
   return created;
 }
 
@@ -206,6 +217,16 @@ export async function getOrCreateDevUser(name: string): Promise<User> {
       botSlots: 0,
     })
     .returning();
+  notifyDiscord({
+    title: "👤 New account created",
+    color: 0x5865f2,
+    fields: [
+      { name: "User", value: created.username, inline: true },
+      { name: "Type", value: "Dev", inline: true },
+      { name: "Role", value: created.role, inline: true },
+      { name: "When", value: whenCreated() },
+    ],
+  });
   return created;
 }
 
@@ -238,6 +259,16 @@ export async function createLocalUser(params: {
       passwordHash: hashPassword(password),
     })
     .returning();
+  notifyDiscord({
+    title: "👤 New account created",
+    color: 0x5865f2,
+    fields: [
+      { name: "User", value: created.username, inline: true },
+      { name: "Type", value: "Local", inline: true },
+      { name: "Role", value: created.role, inline: true },
+      { name: "When", value: whenCreated() },
+    ],
+  });
   return created;
 }
 

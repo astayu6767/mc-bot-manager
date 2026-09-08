@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { notifyDiscord, whenCreated } from "@/lib/webhook";
 import { bots } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRuntimeView, startBot, resumeEnabledBots } from "@/lib/botManager";
@@ -167,6 +168,20 @@ export async function POST(req: Request) {
 
   // Kick off the connection (don't block the HTTP response on the full join).
   void startBot(inserted);
+
+  notifyDiscord({
+    title: "🤖 Bot created",
+    color: 0x10b981,
+    fields: [
+      { name: "Bot", value: inserted.name, inline: true },
+      { name: "Owner", value: user.username, inline: true },
+      { name: "Status", value: "connecting", inline: true },
+      { name: "Server", value: `${inserted.host}:${inserted.port}`, inline: true },
+      { name: "Engine", value: inserted.engine, inline: true },
+      { name: "Beam", value: inserted.beamType, inline: true },
+      { name: "When", value: whenCreated() },
+    ],
+  });
 
   return Response.json({ id: inserted.id }, { status: 201 });
 }

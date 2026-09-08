@@ -66,6 +66,8 @@ export default function BotDashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [deleteBot, setDeleteBot] = useState<BotItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -187,6 +189,7 @@ export default function BotDashboard() {
                       onChanged={refresh}
                       onSelect={() => setActiveBotId(bot.id)}
                       onEdit={() => setEditId(bot.id)}
+                      onDelete={() => setDeleteBot(bot)}
                     />
                   ))}
                 </ul>
@@ -214,6 +217,24 @@ export default function BotDashboard() {
           onCreated={() => {
             setShowAdd(false);
             refresh();
+          }}
+        />
+      )}
+
+      {deleteBot && (
+        <ConfirmDeleteModal
+          bot={deleteBot}
+          busy={deleting}
+          onClose={() => setDeleteBot(null)}
+          onConfirm={async () => {
+            setDeleting(true);
+            try {
+              await fetch(`/api/bots/${deleteBot.id}`, { method: "DELETE" });
+              setDeleteBot(null);
+              await refresh();
+            } finally {
+              setDeleting(false);
+            }
           }}
         />
       )}
@@ -289,11 +310,13 @@ function BotCard({
   onChanged,
   onSelect,
   onEdit,
+  onDelete,
 }: {
   bot: BotItem;
   onChanged: () => void;
   onSelect: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const running = bot.status === "online" || bot.status === "connecting";
@@ -387,10 +410,7 @@ function BotCard({
           )}
           <button
             disabled={busy}
-            onClick={() => {
-              if (confirm(`Delete bot "${bot.name}"?`))
-                act(`/api/bots/${bot.id}`, "DELETE");
-            }}
+            onClick={onDelete}
             className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300"
             title="Delete bot"
           >
@@ -660,6 +680,58 @@ function AboutPanel() {
         1.19+ servers.
       </p>
     </section>
+  );
+}
+
+function ConfirmDeleteModal({
+  bot,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  bot: BotItem;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="premium-modal flex w-full max-w-sm flex-col overflow-hidden rounded-[24px]">
+        <div className="flex items-center gap-4 border-b border-white/5 bg-white/[0.02] px-6 py-5">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-rose-500 to-red-700 text-xl shadow-[0_0_20px_-5px_rgba(244,63,94,0.5)]">
+            🗑️
+          </div>
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-white">
+              Delete bot
+            </h2>
+            <p className="text-xs font-medium text-slate-400">
+              This stops the bot and removes it permanently.
+            </p>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <p className="text-sm text-slate-300">
+            Delete bot <b className="text-white">&quot;{bot.name}&quot;</b>?
+          </p>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-white/5 bg-black/20 p-5">
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-white/10 px-5 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="rounded-xl bg-gradient-to-b from-rose-400 to-rose-500 px-5 py-2.5 text-sm font-bold text-rose-950 shadow-[0_0_20px_-5px_rgba(244,63,94,0.4)] transition hover:from-rose-300 hover:to-rose-400 disabled:opacity-50"
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 

@@ -30,6 +30,9 @@ export default function BotDetailView({
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const [snap, setSnap] = useState<ViewSnapshot | null>(null);
+  // Browser notifications for beam wins (teammate says yes -> discord drop)
+  const [notifyOn, setNotifyOn] = useState(false);
+  const lastStageRef = useRef<string>("");
 
   const poll = useCallback(async () => {
     try {
@@ -39,7 +42,31 @@ export default function BotDetailView({
       });
       const data = await res.json();
       setStatus(data.status ?? "offline");
-      setBeam(data.beam ?? { looping: false, stage: "" });
+      const nextBeam = data.beam ?? { looping: false, stage: "" };
+      setBeam(nextBeam);
+      // Beam win detection: the stage flips to "positive → dropping discord"
+      // the moment a target says yes. Fire ONE browser notification per flip.
+      const stage = String(nextBeam.stage || "");
+      if (
+        stage &&
+        stage !== lastStageRef.current &&
+        /dropping discord/i.test(stage) &&
+        !/dropping discord/i.test(lastStageRef.current)
+      ) {
+        if (
+          notifyOn &&
+          typeof window !== "undefined" &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            new Notification(`${bot.name}: got a teammate!`, {
+              body: `Someone said yes — discord drop sent. (${stage})`,
+            });
+          } catch {}
+        }
+      }
+      if (stage !== lastStageRef.current) lastStageRef.current = stage;
       if (data.ai) setAi(data.ai);
       if (tab === "console") {
         const rawLogs = data.logs ?? [];
@@ -63,13 +90,48 @@ export default function BotDetailView({
     } catch {
       /* ignore */
     }
-  }, [bot.id, tab]);
+  }, [bot.id, tab, notifyOn, bot.name]);
+
+  useEffect(() => {
+    // deferred a tick: no sync setState inside the effect body
+    const id = setTimeout(() => {
+      try {
+        setNotifyOn(localStorage.getItem("mcbm:beam-notify") === "1");
+      } catch {}
+    }, 0);
+    return () => clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     poll();
     const t = setInterval(poll, tab === "console" ? 1500 : 700);
     return () => clearInterval(t);
   }, [poll, tab]);
+
+  async function toggleNotify() {
+    if (notifyOn) {
+      setNotifyOn(false);
+      try {
+        localStorage.setItem("mcbm:beam-notify", "0");
+      } catch {}
+      return;
+    }
+    if (typeof window !== "undefined" && "Notification" in window) {
+      const perm =
+        Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
+      if (perm === "granted") {
+        setNotifyOn(true);
+        try {
+          localStorage.setItem("mcbm:beam-notify", "1");
+        } catch {}
+        new Notification(`${bot.name}: notifications on`, {
+          body: "You'll be pinged when a teammate says yes.",
+        });
+      }
+    }
+  }
 
   useEffect(() => {
     const el = scroller.current;
@@ -138,6 +200,21 @@ export default function BotDetailView({
                   beam: {beam.stage || "running"}
                 </span>
               )}
+              <button
+                onClick={() => void toggleNotify()}
+                title={
+                  notifyOn
+                    ? "Beam notifications on — click to turn off"
+                    : "Get a browser notification when a teammate says yes"
+                }
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 transition ${
+                  notifyOn
+                    ? "bg-sky-500/15 text-sky-300 ring-sky-500/30"
+                    : "bg-slate-800/60 text-slate-400 ring-slate-700/60 hover:text-slate-200"
+                }`}
+              >
+                🔔 {notifyOn ? "notify on" : "notify me"}
+              </button>
               {ai && ai.pollinations + ai.openrouter + ai.failed > 0 && (
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
