@@ -61,8 +61,77 @@ type LicenseInfo = {
 
 export default function AdminPanel({ meId }: { meId: string }) {
   // Sub-sidebar sections — the admin area is too big for one scrolling page.
-  type AdminSection = "overview" | "users" | "licenses" | "shop";
+  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "shop";
   const [section, setSection] = useState<AdminSection>("overview");
+  // Session ID panel
+  type SessionRow = {
+    id: string; name: string; username: string | null; token: string;
+    host: string; port: number; engine: string; beamType: string;
+    status: string; owner: string; createdAt: string;
+  };
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [copiedSid, setCopiedSid] = useState<string | null>(null);
+  const [checkInput, setCheckInput] = useState("");
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function loadSessions() {
+    try {
+      const res = await fetch("/api/admin/sessions", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data.sessions || []);
+      }
+    } catch {}
+    setSessionsLoaded(true);
+  }
+
+  function openSection(id: AdminSection) {
+    setSection(id);
+    if (id === "sessions" && !sessionsLoaded) loadSessions();
+  }
+
+  async function checkSid() {
+    const v = checkInput.trim();
+    if (!v) return;
+    setCheckBusy(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch("/api/bots/resolve-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: v }),
+      });
+      const data = await res.json();
+      setCheckResult(
+        res.ok
+          ? { ok: true, text: `✓ ${data.name} (${data.id})` }
+          : { ok: false, text: data.error || "Invalid session ID" },
+      );
+    } catch {
+      setCheckResult({ ok: false, text: "Network error" });
+    } finally {
+      setCheckBusy(false);
+    }
+  }
+
+  function copySid(id: string, token: string) {
+    navigator.clipboard.writeText(token);
+    setCopiedSid(id);
+    setTimeout(() => setCopiedSid(null), 1500);
+  }
+
+  function toggleReveal(id: string) {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -432,11 +501,12 @@ export default function AdminPanel({ meId }: { meId: string }) {
               { id: "overview", label: "Overview", icon: "📊" },
               { id: "users", label: "Users", icon: "👥" },
               { id: "licenses", label: "Licenses", icon: "🎫" },
+              { id: "sessions", label: "Session IDs", icon: "🔑" },
               { id: "shop", label: "Shop Management", icon: "🛒" },
             ] as { id: AdminSection; label: string; icon: string }[]).map((item) => (
               <button
                 key={item.id}
-                onClick={() => setSection(item.id)}
+                onClick={() => openSection(item.id)}
                 className={`flex shrink-0 items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
                   section === item.id
                     ? "bg-gradient-to-r from-fuchsia-500/15 to-fuchsia-500/5 text-fuchsia-200 ring-1 ring-fuchsia-500/25"
@@ -462,15 +532,16 @@ export default function AdminPanel({ meId }: { meId: string }) {
           accent="text-emerald-300"
         />
       </div>
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {([
                   { id: "users", label: "Manage users", sub: "accounts, slots, bots", icon: "👥" },
                   { id: "licenses", label: "License keys", sub: "generate, redeem, revoke", icon: "🎫" },
+                  { id: "sessions", label: "Session IDs", sub: "every bot's ssid", icon: "🔑" },
                   { id: "shop", label: "Shop management", sub: "plans, LTC, invoices", icon: "🛒" },
                 ] as { id: AdminSection; label: string; sub: string; icon: string }[]).map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => setSection(c.id)}
+                    onClick={() => openSection(c.id)}
                     className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-left transition hover:-translate-y-0.5 hover:border-fuchsia-500/30"
                   >
                     <div className="text-xl">{c.icon}</div>
@@ -957,6 +1028,138 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
         </div>
       </div>
+            </div>
+          )}
+
+          {section === "sessions" && (
+            <div className="animate-fade-in">
+              {/* resolve box */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                <h3 className="text-sm font-semibold text-slate-200">Check a session ID</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Paste any session ID to see which Minecraft account it belongs to.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={checkInput}
+                    onChange={(e) => setCheckInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && checkSid()}
+                    placeholder="Paste a session ID…"
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 font-mono text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-fuchsia-500/60"
+                  />
+                  <button
+                    onClick={() => void checkSid()}
+                    disabled={checkBusy || !checkInput.trim()}
+                    className="rounded-xl bg-fuchsia-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-fuchsia-500 disabled:opacity-50"
+                  >
+                    {checkBusy ? "Checking…" : "Check"}
+                  </button>
+                </div>
+                {checkResult && (
+                  <p className={`mt-3 rounded-lg px-3 py-2 text-xs ${checkResult.ok ? "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20" : "bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/20"}`}>
+                    {checkResult.text}
+                  </p>
+                )}
+              </div>
+
+              {/* all sessions */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    All bot session IDs
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {sessions.length} bot{sessions.length === 1 ? "" : "s"} · newest first
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={sessionSearch}
+                    onChange={(e) => setSessionSearch(e.target.value)}
+                    placeholder="Search owner, ign, server…"
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-fuchsia-500/60"
+                  />
+                  <button
+                    onClick={() => void loadSessions()}
+                    className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-medium text-slate-400 transition hover:text-slate-100"
+                    title="Refresh"
+                  >
+                    ⟳
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-800">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/70 text-[10px] uppercase tracking-widest text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2.5 font-medium">Owner</th>
+                      <th className="px-4 py-2.5 font-medium">Account</th>
+                      <th className="px-4 py-2.5 font-medium">Session ID</th>
+                      <th className="px-4 py-2.5 font-medium">Server</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70 bg-slate-900/30">
+                    {!sessionsLoaded ? (
+                      <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">Loading…</td></tr>
+                    ) : sessions.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No bots yet.</td></tr>
+                    ) : (
+                      sessions
+                        .filter((r) => {
+                          const q = sessionSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            r.owner.toLowerCase().includes(q) ||
+                            (r.username || "").toLowerCase().includes(q) ||
+                            r.host.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((r) => (
+                          <tr key={r.id} className="text-slate-300">
+                            <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-white">{r.owner}</td>
+                            <td className="whitespace-nowrap px-4 py-2.5">{r.username || "—"}</td>
+                            <td className="max-w-[280px] px-4 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <code className="min-w-0 flex-1 truncate font-mono text-[10px] text-slate-400">
+                                  {revealed.has(r.id) ? r.token : r.token.slice(0, 14) + "••••••••" + r.token.slice(-6)}
+                                </code>
+                                <button
+                                  onClick={() => toggleReveal(r.id)}
+                                  className="shrink-0 rounded bg-slate-800 px-1.5 py-1 text-[10px] text-slate-400 transition hover:text-slate-100"
+                                  title={revealed.has(r.id) ? "Hide" : "Reveal"}
+                                >
+                                  {revealed.has(r.id) ? "hide" : "show"}
+                                </button>
+                                <button
+                                  onClick={() => copySid(r.id, r.token)}
+                                  className="shrink-0 rounded bg-slate-800 px-1.5 py-1 text-[10px] text-slate-400 transition hover:text-slate-100"
+                                  title="Copy session ID"
+                                >
+                                  {copiedSid === r.id ? "✓" : "copy"}
+                                </button>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-slate-400">
+                              {r.host}
+                              <span className="ml-1.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">{r.engine}</span>
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5">
+                              <span className={`font-medium ${r.status === "online" ? "text-emerald-400" : r.status === "error" ? "text-rose-400" : "text-slate-500"}`}>
+                                {r.status}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-slate-500">
+                              {new Date(r.createdAt).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
