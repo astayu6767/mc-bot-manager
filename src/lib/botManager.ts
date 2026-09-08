@@ -1938,7 +1938,7 @@ async function aiConverse(
     return { intent: "positive", reply: "lets go" };
   }
   if (/\b(channel|chanel|yt|youtube)\b/.test(t)) {
-    return { intent: "question", reply: `its ${channel}` };
+    return { intent: "question", reply: "same as my username" };
   }
   // Server questions get the REAL configured IP from code — the model
   // invented "hypixel" here, which is never the right answer.
@@ -2804,7 +2804,7 @@ async function runBeamOnce(
       }
       // question / neutral → reply in-character (split into human messages).
       if (ai.reply) await whisperHuman(ai.reply);
-      else if (ai.intent === "question") await whisper(`its ${channel}`);
+      else if (ai.intent === "question") await whisper("same as my username");
       // Soft decline ("im playing with my friends") — the farewell reply is
       // sent above; now LEAVE instead of lingering and answering forever.
       if (/\b(with my friends?|with friends|playing with (my )?friends?|i'?m playing|im playing|playing rn|in a game rn)\b/.test(reply.toLowerCase())) {

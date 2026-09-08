@@ -884,7 +884,6 @@ export function EditBotModal({
   const [host, setHost] = useState(bot.host);
   const [port, setPort] = useState(String(bot.port));
   const [proxy, setProxy] = useState(bot.proxy || "");
-  const [ytChannel, setYtChannel] = useState(bot.ytChannel || "Alight.z");
   const [beamIp, setBeamIp] = useState(bot.beamIp || "badlion-pvp.xyz");
   const [discordUser, setDiscordUser] = useState(bot.discordUser || "stood014");
   const [beamType, setBeamType] = useState(bot.beamType || "ai");
@@ -905,7 +904,6 @@ export function EditBotModal({
       host?: string;
       port?: string;
       proxy?: string;
-      ytChannel?: string;
       beamIp?: string;
       discordUser?: string;
       beamType?: string;
@@ -921,8 +919,6 @@ export function EditBotModal({
     if (host.trim() && host.trim() !== bot.host) payload.host = host.trim();
     if (port.trim() && Number(port) !== bot.port) payload.port = port.trim();
     if (proxy.trim() !== (bot.proxy || "")) payload.proxy = proxy.trim();
-    if (ytChannel.trim() && ytChannel.trim() !== (bot.ytChannel || ""))
-      payload.ytChannel = ytChannel.trim();
     if (beamIp.trim() && beamIp.trim() !== (bot.beamIp || ""))
       payload.beamIp = beamIp.trim();
     if (discordUser.trim() && discordUser.trim() !== (bot.discordUser || ""))
@@ -1050,18 +1046,6 @@ export function EditBotModal({
               onChange={(e) => setProxy(e.target.value)}
               placeholder="socks5://user:pass@host:1080"
               className={`${inputClass} font-mono text-xs`}
-            />
-          </Field>
-
-          <Field
-            label="YouTube channel (for Beam AI)"
-            hint="The channel name the beam AI mentions when a player asks 'what's your channel'."
-          >
-            <input
-              value={ytChannel}
-              onChange={(e) => setYtChannel(e.target.value)}
-              placeholder="Alight.z"
-              className={inputClass}
             />
           </Field>
 
