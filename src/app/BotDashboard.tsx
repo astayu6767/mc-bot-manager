@@ -351,15 +351,19 @@ function BotCard({
               <h3 className="truncate text-base font-semibold">{bot.name}</h3>
               <StatusBadge status={bot.status} />
             </div>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-sm text-slate-400">
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 truncate text-sm text-slate-400">
               <span className="font-mono text-slate-300">
                 {bot.host}:{bot.port}
               </span>
+              <span className="text-slate-600">·</span>
               <span className="rounded-md bg-slate-800/60 px-1.5 py-0.5 text-xs text-slate-400">
                 {bot.version && bot.version !== "auto" ? bot.version : "auto"}
               </span>
-              {bot.username && bot.username !== bot.name && (
-                <span className="text-slate-400">as {bot.username}</span>
+              {bot.username && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-slate-400">{bot.username}</span>
+                </>
               )}
             </p>
           </div>
