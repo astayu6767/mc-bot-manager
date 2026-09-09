@@ -184,10 +184,9 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
                 <EmptyState onAdd={() => setShowAdd(true)} />
               ) : (
                 <div className="grid gap-4">
-                  {items.map((bot, i) => (
+                  {items.map((bot) => (
                     <BotCard
                       key={bot.id}
-                      style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}
                       bot={bot}
                       onChanged={refresh}
                       onSelect={() => setActiveBotId(bot.id)}
@@ -315,14 +314,12 @@ function BotCard({
   onSelect,
   onEdit,
   onDelete,
-  style,
 }: {
   bot: BotItem;
   onChanged: () => void;
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  style?: React.CSSProperties;
 }) {
   const [busy, setBusy] = useState(false);
   const running = bot.status === "online" || bot.status === "connecting";
@@ -338,7 +335,7 @@ function BotCard({
   }
 
   return (
-    <div style={style} className="card-hover glass animate-card-in rounded-2xl p-4 shadow-lg shadow-black/20">
+    <div className="card-hover glass rounded-2xl p-4 shadow-lg shadow-black/20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <BotAvatar

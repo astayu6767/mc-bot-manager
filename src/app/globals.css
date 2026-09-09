@@ -80,7 +80,7 @@ body {
     rgba(9, 9, 11, 0.6)
   );
   border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 4px 24px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px -16px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px);
 }
 
@@ -100,40 +100,49 @@ body {
     box-shadow 0.2s ease;
 }
 .card-hover:hover {
-  transform: translateY(-3px) scale(1.005);
-  border-color: rgba(52, 211, 153, 0.3);
+  transform: translateY(-2px);
+  border-color: rgba(52, 211, 153, 0.25);
   box-shadow: 
-    0 12px 40px -12px rgba(16, 185, 129, 0.15),
-    0 0 0 1px rgba(52, 211, 153, 0.1) inset;
+    0 12px 32px -16px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(52, 211, 153, 0.08) inset;
 }
 
-/* Animations */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* Fluidity: interactive elements ease color/shadow gently (150–200ms). */
+button,
+a,
+input,
+select,
+textarea {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
 }
-@keyframes pop-in {
+
+/* Primary CTA: gentle scale + emerald glow on hover. */
+.btn-primary:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow:
+    0 0 24px -4px rgba(52, 211, 153, 0.45),
+    0 10px 30px -12px rgba(0, 0, 0, 0.55);
+}
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Animations.
+   NOTE: entrance animations must stay opacity-only on containers that hold
+   `position: fixed` children (modals). A transform that lingers after an
+   animation ends (fill-mode: both) becomes the containing block for fixed
+   descendants — overlays then size to the container, not the viewport. */
+@keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.8; }
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
+/* pop-in is only ever applied to modal content wrappers (no fixed children). */
 @keyframes pop-in {
   from {
     opacity: 0;
@@ -175,19 +184,4 @@ body {
   outline: 2px solid rgba(52, 211, 153, 0.55);
   outline-offset: 2px;
   border-radius: 6px;
-}
-
-@keyframes page-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-page-in {
-  animation: page-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-card-in {
-  animation: card-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

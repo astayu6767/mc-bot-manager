@@ -261,7 +261,7 @@ export default function AppShell() {
         </div>
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8">
-          <div key={tab} className="animate-page-in">
+          <div key={tab} className="animate-fade-in">
             {tab === "dashboard" && <BotDashboard meRole={me.role} />}
             {tab === "license" && <LicensePanel />}
             {tab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}
@@ -398,7 +398,7 @@ function LoginScreen({
               <button
                 onClick={passwordAuth}
                 disabled={busy}
-                className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                className="btn-primary w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 {busy ? "Please wait…" : mode === "login" ? "Login with Username" : "Create Account"}
               </button>

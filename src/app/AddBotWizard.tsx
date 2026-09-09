@@ -481,7 +481,7 @@ export default function AddBotWizard({
               <button
                 onClick={() => canNext() && setStep(step + 1)}
                 disabled={!canNext() || checking}
-                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
+                className="btn-primary rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
               >
                 Next
               </button>
@@ -489,7 +489,7 @@ export default function AddBotWizard({
               <button
                 onClick={() => void create()}
                 disabled={creating}
-                className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
+                className="btn-primary rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition-all duration-150 hover:from-emerald-300 hover:to-emerald-400 active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
               >
                 {creating ? "Creating…" : "Create & connect"}
               </button>

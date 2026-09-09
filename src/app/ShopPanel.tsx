@@ -335,8 +335,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
           return (
             <div
               key={plan.id}
-              style={{ animationDelay: `${planIdx * 80}ms` }}
-              className={`group relative flex animate-card-in flex-col rounded-2xl border p-[1px] transition duration-200 hover:-translate-y-0.5 ${
+              className={`group relative flex flex-col rounded-2xl border p-[1px] transition duration-200 hover:-translate-y-0.5 ${
                 [
                   "min-h-[440px]",
                   "min-h-[520px]",
@@ -399,10 +398,10 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
                   <button
                     onClick={() => handleBuy(plan)}
                     disabled={!!buying}
-                    className={`group/buy relative w-full overflow-hidden rounded-2xl py-3 text-xs font-bold tracking-wide transition-all duration-200 active:scale-[0.98] disabled:opacity-50 ${
+                    className={`group/buy relative w-full overflow-hidden rounded-2xl py-3 text-xs font-bold tracking-wide transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 ${
                       plan.popular
                         ? "bg-gradient-to-r from-indigo-500 via-indigo-500 to-blue-600 text-white shadow-[0_6px_20px_rgba(99,102,241,0.35)] hover:shadow-[0_10px_28px_rgba(99,102,241,0.45)] hover:brightness-110"
-                        : "border border-emerald-500/25 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-500/15"
+                        : "btn-primary border border-emerald-500/25 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-500/15"
                     }`}
                   >
                     <span className="relative z-10 flex items-center justify-center gap-1.5">
@@ -470,8 +469,10 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
 
       {/* Checkout Modal */}
       {invoice && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-[460px] overflow-y-auto rounded-2xl border border-slate-700 bg-[#151a2c] shadow-2xl">
+        <div className="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-6">
+          <div className="absolute inset-0 animate-fade-in bg-[#030712]/80 backdrop-blur-xl" onClick={cancelInvoice} />
+          <div className="relative z-10 flex w-full animate-pop-in items-center justify-center">
+            <div className="max-h-[92vh] w-full max-w-[460px] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl shadow-black/40">
             <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
               <div className="flex items-center gap-2.5">
                 <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-300 ring-1 ring-slate-700">
@@ -631,6 +632,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
               )}
             </div>
           </div>
+        </div>
         </div>
       )}
     </div>

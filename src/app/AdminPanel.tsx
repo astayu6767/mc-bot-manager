@@ -838,13 +838,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
             </div>
 
             <div className="p-6">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-amber-500/15 text-[11px] font-bold text-amber-300 ring-1 ring-amber-500/25">1</span>
-                <h4 className="text-sm font-semibold text-white">Generate a key</h4>
-              </div>
-              <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                Create a redeemable key — pick how many bot slots it grants and for how long. The user enters it in their License tab.
-              </p>
+              <h4 className="text-sm font-semibold text-white">Generate New License Key</h4>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className="group">
                   <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 group-focus-within:text-amber-300">Slots</label>
@@ -932,15 +926,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
         <div className="mt-8">
           <div className="flex items-center justify-between">
-            <div>
-                <div className="flex items-center gap-2.5">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-slate-800 text-[11px] font-bold text-slate-300 ring-1 ring-slate-700">2</span>
-                  <h4 className="text-sm font-bold text-white">Unused keys</h4>
-                </div>
-                <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                  Ready to share — nobody has redeemed these yet.
-                </p>
-              </div>
+            <h4 className="text-sm font-bold text-white">Active Redeemable Keys</h4>
             <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-400">{activeKeys.length}</span>
           </div>
           {activeKeys.length === 0 ? (
@@ -998,13 +984,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
           {redeemedKeys.length > 0 && (
             <div className="mt-8">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-slate-800 text-[11px] font-bold text-slate-300 ring-1 ring-slate-700">3</span>
-                <h4 className="text-sm font-semibold text-slate-300">Redeemed keys</h4>
-              </div>
-              <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                Already used — shows who redeemed each key and when.
-              </p>
+              <h4 className="text-sm font-semibold text-slate-400">Redeemed Keys</h4>
               <div className="mt-3 space-y-2">
                 {redeemedKeys.map((k) => (
                   <div key={k.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/30 p-3 opacity-60">
@@ -1033,13 +1013,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
           {licenses.length > 0 && (
             <div className="mt-8">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500/15 text-[11px] font-bold text-emerald-300 ring-1 ring-emerald-500/25">4</span>
-                <h4 className="text-sm font-semibold text-slate-300">Running licenses</h4>
-              </div>
-              <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                License time currently active on user accounts — slots stay until these expire.
-              </p>
+              <h4 className="text-sm font-semibold text-slate-400">Redeemed Licenses (active grants)</h4>
               <div className="mt-3 space-y-2">
                 {licenses.filter(l=>l.active && !l.isExpired).slice(0,12).map((lic) => (
                   <div key={lic.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/40 p-3">
@@ -1247,14 +1221,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
             {/* Owner LTC */}
             <div className="border-y border-slate-800/60 bg-slate-900/60 px-6 py-4">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-violet-500/15 text-[11px] font-bold text-violet-300 ring-1 ring-violet-500/25">1</span>
-                <label className="text-[13px] font-semibold text-white">Payout address</label>
-              </div>
-              <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                Where Litecoin payments from purchases get forwarded.
-              </p>
-              <label className="mt-3 block text-[11px] font-semibold uppercase tracking-widest text-slate-400">Owner&apos;s LTC address</label>
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Owner&apos;s LTC Address (funds forwarded here)</label>
               <div className="mt-2 flex gap-2">
                 <input
                   value={newOwnerLtc}
@@ -1285,13 +1252,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
             {/* Plans */}
             <div className="p-6">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-violet-500/15 text-[11px] font-bold text-violet-300 ring-1 ring-violet-500/25">2</span>
-                <h4 className="text-sm font-semibold text-white">Plans</h4>
-              </div>
-              <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                The tiers buyers see in the Shop tab. Edit price, discount, bots and hours — changes go live immediately.
-              </p>
+              <h4 className="text-sm font-semibold text-white">Plans (editable)</h4>
               <div className="mt-3 grid gap-3">
                 {shopPlans.map((p: any) => (
                   <div key={p.id} className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
@@ -1401,15 +1362,9 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 </button>
               </div>
 
-              <div className="mt-8 border-t border-slate-800/60 pt-6">
-                <div className="flex items-center gap-2.5">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-violet-500/15 text-[11px] font-bold text-violet-300 ring-1 ring-violet-500/25">3</span>
-                  <h5 className="text-xs font-semibold text-white">Recent invoices</h5>
-                </div>
-                <p className="mt-1.5 pl-9 text-xs text-slate-500">
-                  Every purchase attempt. Pending ones can be force-marked paid (creates + reveals the license key).
-                </p>
-                <div className="mt-3 max-h-[320px] space-y-2 overflow-auto">
+              <div className="mt-6">
+                <h5 className="text-xs font-semibold text-slate-400">Recent invoices (LTC)</h5>
+                <div className="mt-2 max-h-[320px] space-y-2 overflow-auto">
                   {shopInvoices.length === 0 ? <p className="text-xs text-slate-600">No invoices</p> : shopInvoices.slice(0, 20).map((inv: any) => (
                     <div key={inv.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px]">
                       <div className="min-w-0">
