@@ -1353,15 +1353,35 @@ export default function AdminPanel({ meId }: { meId: string }) {
               <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                 <h5 className="text-xs font-semibold text-white">Add a new plan</h5>
                 <p className="mt-1 text-[11px] text-slate-500">Fills the shop with a new tier buyers can purchase.</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <input value={newPlanTier} onChange={(e) => setNewPlanTier(e.target.value)} placeholder="TIER e.g. PRO" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" />
-                  <input type="number" step="0.01" value={newPlanPrice} onChange={(e) => setNewPlanPrice(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="price $" />
-                  <input type="number" value={newPlanBots} onChange={(e) => setNewPlanBots(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="bots" />
-                  <input type="number" value={newPlanHours} onChange={(e) => setNewPlanHours(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="hours" />
-                  <input type="number" value={newPlanDiscount} onChange={(e) => setNewPlanDiscount(Number(e.target.value))} className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="discount %" />
-                  <label className="flex items-center gap-1 text-xs text-slate-400"><input type="checkbox" checked={newPlanPopular} onChange={(e) => setNewPlanPopular(e.target.checked)} /> Popular</label>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <PlanField label="Tier name" hint="shown in the shop">
+                    <input value={newPlanTier} onChange={(e) => setNewPlanTier(e.target.value)} placeholder="e.g. PRO" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  </PlanField>
+                  <PlanField label="Price" hint="$ per month">
+                    <input type="number" step="0.01" value={newPlanPrice} onChange={(e) => setNewPlanPrice(Number(e.target.value))} placeholder="e.g. 5" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  </PlanField>
+                  <PlanField label="Discount" hint="% off — 0 for none">
+                    <input type="number" value={newPlanDiscount} onChange={(e) => setNewPlanDiscount(Number(e.target.value))} placeholder="0" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  </PlanField>
+                  <PlanField label="Bot slots" hint="bots the buyer can run">
+                    <input type="number" value={newPlanBots} onChange={(e) => setNewPlanBots(Number(e.target.value))} placeholder="e.g. 3" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  </PlanField>
+                  <PlanField label="Runtime" hint="hours per day">
+                    <input type="number" value={newPlanHours} onChange={(e) => setNewPlanHours(Number(e.target.value))} placeholder="e.g. 6" className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  </PlanField>
+                  <div>
+                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Badge</span>
+                    <label className="mt-2 flex h-[34px] cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs text-slate-300">
+                      <input type="checkbox" checked={newPlanPopular} onChange={(e) => setNewPlanPopular(e.target.checked)} className="accent-violet-500" />
+                      Mark as Most Popular
+                    </label>
+                  </div>
                 </div>
-                <input value={newPlanFeatures} onChange={(e) => setNewPlanFeatures(e.target.value)} placeholder="Features comma separated e.g. 2 bots, 6h/day, Basic logs" className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs" />
+                <div className="mt-3">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Features</span>
+                  <input value={newPlanFeatures} onChange={(e) => setNewPlanFeatures(e.target.value)} placeholder="comma separated — e.g. 3 bots, 6h/day, priority support" className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600" />
+                  <p className="mt-1 text-[10px] text-slate-500">Each item becomes a checkmark line on the plan card in the shop.</p>
+                </div>
                 <button
                   disabled={busy || !newPlanTier}
                   onClick={async () => {
@@ -1456,6 +1476,26 @@ function ShieldCheck() {
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="M9 12l2 2 4-4" />
     </svg>
+  );
+}
+
+function PlanField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <div className="mt-1.5">{children}</div>
+      <span className="mt-1 block text-[10px] text-slate-500">{hint}</span>
+    </div>
   );
 }
 
