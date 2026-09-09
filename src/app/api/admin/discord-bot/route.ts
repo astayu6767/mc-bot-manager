@@ -14,9 +14,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Bot invite permissions: View Channel, Send Messages, Embed Links,
-// Attach Files, Read History, Manage Channels + Manage Roles (ticket
-// channel permission overwrites need Manage Roles).
-const INVITE_PERMISSIONS = 268553232;
+// Attach Files, Read History, Manage Channels, Manage Roles (ticket
+// overwrites) and Manage Messages (/purge).
+const INVITE_PERMISSIONS = 268561424;
 
 function tokenHint(token: string): string {
   if (!token) return "";

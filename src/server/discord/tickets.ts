@@ -18,6 +18,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { getUserLicenseStatus } from "@/lib/license";
 import { brandEmbed, BRAND, fullDate } from "./embeds";
 import { botState } from "./state";
+import { OWNER_DISCORD_IDS } from "./settings";
 import { getLinkedUser, isAdminExecutor } from "./commands";
 
 export const TICKET_CATEGORIES = [
@@ -348,17 +349,10 @@ async function claimTicket(interaction: ButtonInteraction): Promise<void> {
     });
     return;
   }
-  const staff = await isStaff(interaction);
-  if (!staff) {
+  // Claim is reserved for the owner only.
+  if (!OWNER_DISCORD_IDS.has(interaction.user.id)) {
     await interaction.reply({
-      embeds: [brandEmbed({ title: "Staff only", color: BRAND.rose })],
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-  if (ticket.openerDiscordId === interaction.user.id) {
-    await interaction.reply({
-      embeds: [brandEmbed({ title: "You opened this ticket — staff claims it", color: BRAND.amber })],
+      embeds: [brandEmbed({ title: "Owner only", description: "Only the server owner can claim tickets.", color: BRAND.rose })],
       flags: MessageFlags.Ephemeral,
     });
     return;

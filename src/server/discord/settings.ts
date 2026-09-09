@@ -28,6 +28,15 @@ export async function deleteSetting(key: string): Promise<void> {
   await db.delete(appSettings).where(eq(appSettings.key, key));
 }
 
+// Discord user IDs allowed to claim tickets (the server owner's accounts).
+// Extend via the OWNER_DISCORD_IDS env var (comma-separated).
+export const OWNER_DISCORD_IDS = new Set(
+  (process.env.OWNER_DISCORD_IDS || "1484126687049289738")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+
 /** Public site URL used by buttons in embeds (Renew Now, Buy License, ...). */
 export async function getSiteUrl(): Promise<string> {
   const stored = await getSetting(SITE_URL_KEY);

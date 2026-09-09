@@ -6,17 +6,21 @@ import {
   MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
+  StringSelectMenuBuilder,
   type ChatInputCommandInteraction,
   type Interaction,
   type RESTPostAPIApplicationCommandsJSONBody,
+  type StringSelectMenuInteraction,
 } from "discord.js";
 import { db } from "@/db";
-import { shopPlans, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { bots, shopPlans, users } from "@/db/schema";
+import { asc, eq } from "drizzle-orm";
 import { getUserLicenseStatus, redeemLicenseKey, createLicenseKey } from "@/lib/license";
 import { logDiscordEvent } from "@/lib/eventLog";
-import { brandEmbed, BRAND, bullets, fullDate, relative } from "./embeds";
+import { brandEmbed, BRAND, fullDate, relative } from "./embeds";
+import { bullets, parseDuration, smoothChannelName } from "./utils";
 import { getSiteUrl } from "./settings";
+import { botState } from "./state";
 import { openTicketFromSelect, postTicketPanel, handleTicketButton } from "./tickets";
 
 // ---------------------------------------------------------------------------
@@ -49,51 +53,6 @@ export async function isAdminExecutor(interaction: Interaction): Promise<boolean
     if (linked?.role === "admin") return true;
   } catch {}
   return false;
-}
-
-/** Parse "30d", "12h", "7d12h" or a bare number (days). */
-export function parseDuration(input: string): { days: number; hours: number } | null {
-  const s = input.trim().toLowerCase();
-  if (/^\d+$/.test(s)) return { days: parseInt(s, 10), hours: 0 };
-  const m = s.match(/^(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?$/);
-  if (!m) return null;
-  const days = m[1] ? parseInt(m[1], 10) : 0;
-  const hours = m[2] ? parseInt(m[2], 10) : 0;
-  if (days === 0 && hours === 0) return null;
-  return { days, hours };
-}
-
-// ---------------------------------------------------------------------------
-// Smooth channel renamer — emoji + normalized kebab name
-// ---------------------------------------------------------------------------
-
-const CHANNEL_EMOJI_RULES: [RegExp, string][] = [
-  [/announc|news|update/, "📢"],
-  [/rule|law|guide/, "📜"],
-  [/ticket|support|help|assist/, "🎧"],
-  [/bill|payment|purchase|shop|store|buy|ltc|crypto|checkout/, "🛒"],
-  [/log/, "📋"],
-  [/bot/, "🤖"],
-  [/licen[sc]e|key/, "🔑"],
-  [/bug|report|issue|glitch/, "🐞"],
-  [/voice|vc|music|radio/, "🔊"],
-  [/intro|welcome|start|info/, "👋"],
-  [/memes?|spam|fun|meme/, "😈"],
-  [/staff|admin|mod|team/, "🛡️"],
-  [/general|chat|talk|lounge|off-?topic/, "💬"],
-];
-
-export function smoothChannelName(current: string): string {
-  // Strip leading emojis/symbols, keep the words
-  let name = current.replace(/^[^a-z0-9]+/, "");
-  name = name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  if (!name) name = "channel";
-  const emoji = CHANNEL_EMOJI_RULES.find(([re]) => re.test(name))?.[1] ?? "✨";
-  return `${emoji}-${name}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +98,14 @@ export function getCommandBuilders(): RESTPostAPIApplicationCommandsJSONBody[] {
     new SlashCommandBuilder().setName("purchase-panel").setDescription("Post the plan showcase embed with a Buy License button (admin only)"),
     new SlashCommandBuilder().setName("setup-logs").setDescription("Create the logs-signups/purchases/bots/errors channels (admin only)"),
     new SlashCommandBuilder().setName("rename-smooth-channel").setDescription("Rename this channel to a clean emoji-prefixed name (admin only)"),
+    new SlashCommandBuilder()
+      .setName("purge")
+      .setDescription("Bulk delete recent messages (admin only)")
+      .addIntegerOption((o) => o.setName("amount").setDescription("How many messages to delete (1-100)").setRequired(true).setMinValue(1).setMaxValue(100))
+      .addUserOption((o) => o.setName("user").setDescription("Only delete messages from this user"))
+      .addStringOption((o) => o.setName("contains").setDescription("Only delete messages containing this text").setMaxLength(200))
+      .addBooleanOption((o) => o.setName("bots").setDescription("Only delete messages sent by bots")),
+    new SlashCommandBuilder().setName("bots").setDescription("List your bots with their online/offline status"),
   ];
   return commands.map((c) => c.toJSON());
 }
@@ -162,6 +129,8 @@ export async function handleInteraction(interaction: Interaction): Promise<void>
       await handleCommand(interaction);
     } else if (interaction.isStringSelectMenu() && interaction.customId === "ticket:open") {
       await openTicketFromSelect(interaction);
+    } else if (interaction.isStringSelectMenu() && interaction.customId === "plan:buy") {
+      await handlePlanSelect(interaction);
     } else if (interaction.isButton() && interaction.customId.startsWith("ticket:")) {
       await handleTicketButton(interaction);
     }
@@ -199,6 +168,10 @@ async function handleCommand(interaction: ChatInputCommandInteraction): Promise<
       return cmdSetupLogs(interaction);
     case "rename-smooth-channel":
       return cmdRenameSmooth(interaction);
+    case "purge":
+      return cmdPurge(interaction);
+    case "bots":
+      return cmdBots(interaction);
     default:
       await interaction.reply({ content: "Unknown command.", flags: MessageFlags.Ephemeral });
   }
@@ -482,73 +455,183 @@ async function cmdPurchasePanel(interaction: ChatInputCommandInteraction): Promi
     });
     return;
   }
+
   const siteUrl = await getSiteUrl();
-  const embeds = plans.map((plan) => {
-    const features: string[] = JSON.parse(plan.features || "[]");
+  const embed = brandEmbed({
+    title: "License Plans",
+    description:
+      "Pick a plan below to see the details, then grab your license — paid in LTC, key delivered instantly.",
+    color: BRAND.emerald,
+  });
+  if (siteUrl) embed.addFields({ name: "Dashboard", value: siteUrl, inline: false });
+  for (const plan of plans) {
     const finalPrice = plan.discount > 0
       ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
       : plan.price;
-    const embed = brandEmbed({
-      title: `${plan.tier}${plan.popular === "true" ? " — most popular" : ""}`,
-      color: plan.popular === "true" ? BRAND.violet : BRAND.emerald,
+    embed.addFields({
+      name: `${plan.tier}${plan.popular === "true" ? " ⭐" : ""} — $${finalPrice}/mo`,
+      value: `${plan.bots} bot slots · ${plan.hours}h/day runtime`,
+      inline: false,
     });
-    embed.setDescription(
-      features.length > 0 ? bullets(features.slice(0, 6).join(",")) : `Run ${plan.bots} bots, ${plan.hours}h a day.`,
+  }
+
+  const select = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("plan:buy")
+      .setPlaceholder("Choose a plan to purchase…")
+      .addOptions(
+        plans.slice(0, 25).map((plan) => {
+          const finalPrice = plan.discount > 0
+            ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
+            : plan.price;
+          return {
+            label: plan.tier.slice(0, 100),
+            value: plan.id,
+            description: `$${finalPrice}/mo · ${plan.bots} bots · ${plan.hours}h/day`.slice(0, 100),
+            emoji: plan.popular === "true" ? "⭐" : undefined,
+          };
+        }),
+      ),
+  );
+  const rows: ActionRowBuilder<StringSelectMenuBuilder | ButtonBuilder>[] = [select];
+  if (siteUrl) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setLabel("Buy License").setStyle(ButtonStyle.Link).setURL(`${siteUrl}/#shop`),
+        new ButtonBuilder().setLabel("View Web Dashboard").setStyle(ButtonStyle.Link).setURL(siteUrl),
+      ),
     );
-    embed.addFields(
-      { name: "Price", value: `$${finalPrice} / month`, inline: true },
-      { name: "Bot slots", value: String(plan.bots), inline: true },
-      { name: "Runtime", value: `${plan.hours}h / day`, inline: true },
-    );
-    return embed;
-  });
-  const rows = siteUrl
-    ? [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setLabel("Buy License").setStyle(ButtonStyle.Link).setURL(`${siteUrl}/#shop`),
-          new ButtonBuilder().setLabel("View Web Dashboard").setStyle(ButtonStyle.Link).setURL(siteUrl),
-        ),
-      ]
-    : [];
-  await target.send({ embeds, components: rows });
+  }
+  await target.send({ embeds: [embed], components: rows });
   await interaction.reply({
     embeds: [brandEmbed({ title: "Purchase panel posted", color: BRAND.emerald })],
     flags: MessageFlags.Ephemeral,
   });
 }
 
+async function handlePlanSelect(interaction: StringSelectMenuInteraction): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const planId = interaction.values[0];
+  const [plan] = await db.select().from(shopPlans).where(eq(shopPlans.id, planId));
+  if (!plan || plan.active !== "true") {
+    await interaction.editReply("That plan is no longer available.");
+    return;
+  }
+  const siteUrl = await getSiteUrl();
+  const finalPrice = plan.discount > 0
+    ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
+    : plan.price;
+  let features: string[] = [];
+  try {
+    features = JSON.parse(plan.features || "[]");
+  } catch {}
+  const embed = brandEmbed({
+    title: `${plan.tier}${plan.popular === "true" ? " — most popular" : ""}`,
+    description:
+      (features.length > 0 ? bullets(features.slice(0, 8).join(",")) : `Run ${plan.bots} bots, ${plan.hours}h a day.`) +
+      "\n\nPay with Litecoin — your license key is delivered instantly after payment.",
+    color: plan.popular === "true" ? BRAND.violet : BRAND.emerald,
+  });
+  embed.addFields(
+    { name: "Price", value: `$${finalPrice} / month`, inline: true },
+    { name: "Bot slots", value: String(plan.bots), inline: true },
+    { name: "Runtime", value: `${plan.hours}h / day`, inline: true },
+  );
+  const rows = siteUrl
+    ? [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setLabel("Buy License").setStyle(ButtonStyle.Link).setURL(`${siteUrl}/#shop`),
+        ),
+      ]
+    : [];
+  await interaction.editReply({ embeds: [embed], components: rows });
+}
+
 async function cmdSetupLogs(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!(await isAdminExecutor(interaction))) return replyDenied(interaction);
   const guild = interaction.guild;
   if (!guild) return;
+  const botId = interaction.client.user?.id;
+  const staffRoles = guild.roles.cache.filter((r) =>
+    ["staff", "support", "moderator", "mod", "helper", "admin"].some((h) => r.name.toLowerCase().includes(h)),
+  );
+  // Log channels are staff-only: @everyone loses view access; the person who
+  // ran the command, staff roles and the bot keep full access.
+  const overwrites = [
+    { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    {
+      id: interaction.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    },
+    ...(botId
+      ? [
+          {
+            id: botId,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.ManageMessages,
+            ],
+          },
+        ]
+      : []),
+    ...staffRoles.map((role) => ({
+      id: role.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    })),
+  ];
+
   const wanted = ["logs-signups", "logs-purchases", "logs-bots", "logs-errors"];
   const created: string[] = [];
-  const skipped: string[] = [];
+  const locked: string[] = [];
+  const failed: string[] = [];
   for (const name of wanted) {
-    const exists = guild.channels.cache.some((c) => c.name === name);
-    if (exists) {
-      skipped.push(`#${name}`);
+    const existing = guild.channels.cache.find(
+      (c) => c.name === name && c.type === ChannelType.GuildText,
+    ) as import("discord.js").TextChannel | undefined;
+    if (existing) {
+      // Retro-lock channels created before the privacy fix.
+      try {
+        await existing.permissionOverwrites.set(overwrites);
+        locked.push(`#${name}`);
+      } catch (err) {
+        console.warn(`[discord-bot] could not lock #${name}: ${err instanceof Error ? err.message : err}`);
+        failed.push(`#${name}`);
+      }
       continue;
     }
     try {
-      await guild.channels.create({ name, type: ChannelType.GuildText });
+      await guild.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        permissionOverwrites: overwrites,
+      });
       created.push(`#${name}`);
     } catch (err) {
       console.warn(`[discord-bot] could not create #${name}: ${err instanceof Error ? err.message : err}`);
+      failed.push(`#${name}`);
     }
   }
   const embed = brandEmbed({
     title: "Log channels ready",
+    description:
+      "These channels are private — only you, staff roles and the bot can see them. Website events flow in while the bot is online.",
     color: BRAND.emerald,
   });
-  embed.setDescription(
-    [
-      created.length > 0 ? `**Created**\n${created.map((c) => `- ${c}`).join("\n")}` : "",
-      skipped.length > 0 ? `**Already exist**\n${skipped.map((c) => `- ${c}`).join("\n")}` : "",
-      "\nWebsite events now flow into these channels while the bot is online.",
-    ]
-      .filter(Boolean)
-      .join("\n"),
+  embed.addFields(
+    { name: "Created", value: created.length > 0 ? created.map((c) => `- ${c}`).join("\n") : "—", inline: true },
+    { name: "Locked (already existed)", value: locked.length > 0 ? locked.map((c) => `- ${c}`).join("\n") : "—", inline: true },
+    { name: "Failed", value: failed.length > 0 ? failed.map((c) => `- ${c}`).join("\n") : "—", inline: true },
   );
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
@@ -599,4 +682,158 @@ async function cmdRenameSmooth(interaction: ChatInputCommandInteraction): Promis
       flags: MessageFlags.Ephemeral,
     });
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// /purge — Carl-bot style bulk delete
+// ---------------------------------------------------------------------------
+
+async function cmdPurge(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await isAdminExecutor(interaction))) return replyDenied(interaction);
+  const channel = interaction.guild?.channels.cache.get(interaction.channelId);
+  if (!interaction.inGuild() || !channel || channel.type !== ChannelType.GuildText) {
+    await interaction.reply({
+      embeds: [brandEmbed({ title: "Run this inside a server text channel", color: BRAND.rose })],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const member = interaction.member as import("discord.js").GuildMember | null;
+  if (!member?.permissions?.has(PermissionFlagsBits.ManageMessages)) {
+    await interaction.reply({
+      embeds: [brandEmbed({ title: "Missing permission", description: "You need the **Manage Messages** permission to purge.", color: BRAND.rose })],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const amount = interaction.options.getInteger("amount", true);
+  const user = interaction.options.getUser("user");
+  const contains = interaction.options.getString("contains")?.toLowerCase().trim();
+  const onlyBots = interaction.options.getBoolean("bots") ?? false;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    const collected = await channel.messages.fetch({ limit: 100 });
+    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000; // bulk delete only works < 14 days
+    let skippedOld = 0;
+    let skippedFilter = 0;
+    const deletable: string[] = [];
+    for (const m of [...collected.values()].sort((a, b) => b.createdTimestamp - a.createdTimestamp)) {
+      if (deletable.length >= amount) break;
+      if (m.pinned) {
+        skippedFilter++;
+        continue;
+      }
+      if (m.createdTimestamp < cutoff) {
+        skippedOld++;
+        continue;
+      }
+      if (user && m.author.id !== user.id) {
+        skippedFilter++;
+        continue;
+      }
+      if (onlyBots && !m.author.bot) {
+        skippedFilter++;
+        continue;
+      }
+      if (contains && !m.content.toLowerCase().includes(contains)) {
+        skippedFilter++;
+        continue;
+      }
+      deletable.push(m.id);
+    }
+
+    if (deletable.length === 0) {
+      await interaction.editReply("Nothing matched — messages are older than 14 days, pinned, or no filter matched.");
+      return;
+    }
+    await channel.bulkDelete(deletable, true);
+    const notes: string[] = [];
+    if (skippedOld > 0) notes.push(`${skippedOld} skipped (older than 14 days — Discord won't bulk-delete those)`);
+    if (skippedFilter > 0) notes.push(`${skippedFilter} skipped by filters/pinned`);
+    const state = botState();
+    if (contains && state.degraded) notes.push("heads-up: Message Content Intent is off, so text filtering may have missed messages");
+    const filters = [
+      user ? `user: ${user.tag}` : null,
+      contains ? `contains: "${contains}"` : null,
+      onlyBots ? "bots only" : null,
+    ].filter(Boolean);
+
+    const embed = brandEmbed({
+      title: "Purge complete",
+      description: `Deleted **${deletable.length}** message${deletable.length === 1 ? "" : "s"}${filters.length > 0 ? ` (${filters.join(" · ")})` : ""}.`,
+      color: BRAND.emerald,
+    });
+    if (notes.length > 0) embed.addFields({ name: "Notes", value: notes.join("\n"), inline: false });
+    await interaction.editReply({ embeds: [embed] });
+  } catch (err) {
+    console.warn(`[discord-bot] purge failed: ${err instanceof Error ? err.message : err}`);
+    await interaction.editReply(
+      "Purge failed — I need the **Manage Messages** permission and access to this channel's history.",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// /bots — list your bots + status
+// ---------------------------------------------------------------------------
+
+const BOT_STATUS_META: Record<string, { emoji: string; label: string }> = {
+  online: { emoji: "🟢", label: "online" },
+  connecting: { emoji: "🟡", label: "connecting" },
+  error: { emoji: "🔴", label: "error" },
+  offline: { emoji: "⚫", label: "offline" },
+};
+
+async function cmdBots(interaction: ChatInputCommandInteraction): Promise<void> {
+  const linked = await getLinkedUser(interaction.user.id);
+  if (!linked) {
+    await interaction.reply({
+      embeds: [
+        brandEmbed({
+          title: "No linked account",
+          description:
+            "Log in on the website using **Login with Discord** with this same account first — then /bots shows your dashboard bots.",
+          color: BRAND.amber,
+        }),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const myBots = await db
+    .select()
+    .from(bots)
+    .where(eq(bots.userId, linked.id))
+    .orderBy(asc(bots.createdAt));
+  const status = await getUserLicenseStatus(linked.id);
+  const siteUrl = await getSiteUrl();
+
+  const embed = brandEmbed({
+    title: "Your bots",
+    description:
+      myBots.length === 0
+        ? "No bots yet — create one from the dashboard."
+        : `**${myBots.length}** bot${myBots.length === 1 ? "" : "s"} · ${status.usedSlots}/${status.totalSlots} slots used`,
+    color: myBots.length > 0 ? BRAND.emerald : BRAND.slate,
+  });
+  embed.setAuthor({ name: linked.username, iconURL: interaction.user.displayAvatarURL() });
+  if (myBots.length > 0) {
+    const lines = myBots.slice(0, 25).map((b) => {
+      const meta = BOT_STATUS_META[b.status] ?? BOT_STATUS_META.offline;
+      return `${meta.emoji} **${b.name}** — ${meta.label}`;
+    });
+    embed.addFields({ name: "Bots", value: lines.join("\n"), inline: false });
+  }
+  const rows = siteUrl
+    ? [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setLabel("Open Dashboard").setStyle(ButtonStyle.Link).setURL(siteUrl),
+        ),
+      ]
+    : [];
+  await interaction.reply({ embeds: [embed], components: rows, flags: MessageFlags.Ephemeral });
 }

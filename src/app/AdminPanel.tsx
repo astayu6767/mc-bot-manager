@@ -127,9 +127,12 @@ export default function AdminPanel({ meId }: { meId: string }) {
   // Poll the bot status while the Admin Bot section is open.
   useEffect(() => {
     if (section !== "adminbot") return;
-    void loadBotStatus();
+    const first = setTimeout(() => void loadBotStatus(), 0);
     const timer = setInterval(() => void loadBotStatus(), 12000);
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, [section, loadBotStatus]);
 
   async function startAdminBot() {
@@ -307,7 +310,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
       if (ownerRes.ok) {
         const d = await ownerRes.json();
         setOwnerLtc(d.ownerLtcAddress || "");
-        if (!newOwnerLtc) setNewOwnerLtc(d.ownerLtcAddress || "");
+        setNewOwnerLtc((prev) => prev || d.ownerLtcAddress || "");
       }
       if (invRes.ok) {
         const d = await invRes.json();
@@ -317,15 +320,20 @@ export default function AdminPanel({ meId }: { meId: string }) {
   }, []);
 
   useEffect(() => {
-    refresh();
-    refreshLicenses();
-    refreshShop();
+    const first = setTimeout(() => {
+      refresh();
+      refreshLicenses();
+      refreshShop();
+    }, 0);
     const t = setInterval(() => {
       refresh();
       refreshLicenses();
       refreshShop();
     }, 8000);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [refresh, refreshLicenses, refreshShop]);
 
   async function loadBots(userId: string) {
@@ -1634,6 +1642,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 ["/purchase-panel", "Admin", "Post the plan showcase embed with a Buy License button"],
                 ["/setup-logs", "Admin", "Create the log channels (signups, purchases, bots, errors)"],
                 ["/rename-smooth-channel", "Admin", "Rename this channel to a clean emoji-prefixed name"],
+                ["/purge", "Admin", "Bulk delete recent messages — filter by user, text or bots only"],
+                ["/bots", "Everyone", "List your bots with online/offline status"],
               ] as [string, string, string][]).map(([cmd, who, desc]) => (
                 <div key={cmd} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
                   <code className="rounded bg-slate-800 px-2 py-0.5 text-xs font-semibold text-emerald-300">{cmd}</code>
@@ -1644,8 +1654,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
             </div>
             <p className="mt-3 text-[10px] text-slate-500">
               Admin commands accept the server owner, members with Administrator permission, and accounts linked to a
-              website admin. Tickets close with the in-channel buttons; expiry reminder DMs go out 5 days and 1 day
-              before a license ends.
+              website admin. Tickets close with the in-channel buttons; the Claim button is owner-only. Log channels are
+              private to you, staff roles and the bot. Expiry reminder DMs go out 5 days and 1 day before a license ends.
             </p>
           </div>
 

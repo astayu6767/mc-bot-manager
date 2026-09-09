@@ -29,16 +29,6 @@ export function brandEmbed(opts: {
   return embed;
 }
 
-/** Turn "a, b, c" or newline-separated input into "- a\n- b\n- c" bullets. */
-export function bullets(input: string): string {
-  return input
-    .split(/[,\n]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => `- ${s}`)
-    .join("\n");
-}
-
 /** Discord-relative timestamp ("in 3 days"). */
 export function relative(date: Date): string {
   return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
