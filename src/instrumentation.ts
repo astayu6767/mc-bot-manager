@@ -11,5 +11,14 @@ export async function register() {
     } catch {
       // ignore
     }
+    // Auto-start the Discord admin bot if a token was saved in the admin panel.
+    try {
+      const { startSavedDiscordBot } = await import("@/server/discord/bot");
+      setTimeout(() => {
+        void startSavedDiscordBot();
+      }, 2500);
+    } catch {
+      // ignore
+    }
   }
 }

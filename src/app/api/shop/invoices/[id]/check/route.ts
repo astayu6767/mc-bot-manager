@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { invoices, shopPlans, licenseKeys } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { checkLtcPayment, generateLicenseKeyForShop } from "@/lib/shop";
+import { logDiscordEvent } from "@/lib/eventLog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,6 +101,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     licenseKey: licenseKeyStr,
     licenseKeyId: createdKey.id,
   }).where(eq(invoices.id, id));
+
+  logDiscordEvent("purchase", {
+    title: "Purchase paid",
+    color: 0x10b981,
+    fields: [
+      { name: "Buyer", value: me.username, inline: true },
+      { name: "Plan", value: plan?.tier ?? "SHOP", inline: true },
+      { name: "Amount", value: `$${invoice.amountUSD} (≈${invoice.amountLTC} LTC)`, inline: true },
+      { name: "License key", value: licenseKeyStr, inline: false },
+    ],
+  });
 
   // Simulate forwarding to owner address (in real implementation, we would sweep UTXOs)
   // For good enough, we mark as forwarded after 2 seconds

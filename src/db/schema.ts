@@ -151,6 +151,33 @@ export const beamConversations = pgTable("beam_conversations", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Discord support tickets opened from the ticket panel.
+export const discordTickets = pgTable("discord_tickets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  // Discord user id of the opener
+  openerDiscordId: text("opener_discord_id").notNull(),
+  // Website user id, when the Discord account is linked to the dashboard
+  webUserId: uuid("web_user_id"),
+  category: text("category").notNull().default("support"),
+  // open | claimed | closed
+  status: text("status").notNull().default("open"),
+  claimedByDiscordId: text("claimed_by_discord_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  closedAt: timestamp("closed_at"),
+});
+
+// License expiry reminder DMs already sent (prevents duplicate pings).
+export const licenseReminders = pgTable("license_reminders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  licenseId: uuid("license_id").notNull(),
+  // "5d" | "1d"
+  kind: text("kind").notNull(),
+  discordId: text("discord_id").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Bot = typeof bots.$inferSelect;

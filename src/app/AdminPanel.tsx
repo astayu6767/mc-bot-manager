@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
 import { EditBotModal } from "./BotDashboard";
-import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon } from "./Icons";
+import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon } from "./Icons";
 import { toast } from "./toast";
 import { SkeletonTable } from "./Skeleton";
 import { BotItem } from "./types";
@@ -75,7 +75,7 @@ type LicenseInfo = {
 
 export default function AdminPanel({ meId }: { meId: string }) {
   // Sub-sidebar sections — the admin area is too big for one scrolling page.
-  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "shop";
+  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "shop" | "adminbot";
   const [section, setSection] = useState<AdminSection>("overview");
   // Session ID panel
   type SessionRow = {
@@ -93,6 +93,95 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [checkInput, setCheckInput] = useState("");
   const [checkBusy, setCheckBusy] = useState(false);
   const [checkResult, setCheckResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Admin Bot (Discord) section
+  type BotStatus = {
+    running: boolean;
+    starting: boolean;
+    tag: string;
+    applicationId: string;
+    guildCount: number;
+    uptimeSec: number;
+    degraded: boolean;
+    lastError: string;
+    hasToken: boolean;
+    tokenHint: string;
+    siteUrl: string;
+    inviteUrl: string;
+  };
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
+  const [botToken, setBotToken] = useState("");
+  const [botSiteUrl, setBotSiteUrl] = useState("");
+  const [botBusy, setBotBusy] = useState(false);
+
+  const loadBotStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/discord-bot", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setBotStatus(data);
+        if (typeof data.siteUrl === "string") setBotSiteUrl(data.siteUrl);
+      }
+    } catch {}
+  }, []);
+
+  // Poll the bot status while the Admin Bot section is open.
+  useEffect(() => {
+    if (section !== "adminbot") return;
+    void loadBotStatus();
+    const timer = setInterval(() => void loadBotStatus(), 12000);
+    return () => clearInterval(timer);
+  }, [section, loadBotStatus]);
+
+  async function startAdminBot() {
+    setBotBusy(true);
+    try {
+      const res = await fetch("/api/admin/discord-bot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: botToken.trim() || undefined,
+          siteUrl: botSiteUrl.trim(),
+        }),
+      });
+      const data = await res.json();
+      setBotStatus(data);
+      if (!res.ok) {
+        toast(data.error || "Failed to start the bot", "error");
+      } else {
+        setBotToken("");
+        toast(data.running ? `Admin bot is live as ${data.tag}` : "Saved", "info");
+      }
+    } catch {
+      toast("Network error", "error");
+    } finally {
+      setBotBusy(false);
+    }
+  }
+
+  async function stopAdminBot(forget: boolean) {
+    setBotBusy(true);
+    try {
+      const res = await fetch(`/api/admin/discord-bot${forget ? "?forget=1" : ""}`, { method: "DELETE" });
+      if (res.ok) {
+        setBotStatus(await res.json());
+        toast(forget ? "Bot stopped and token removed" : "Bot stopped", "info");
+      }
+    } catch {
+      toast("Network error", "error");
+    } finally {
+      setBotBusy(false);
+    }
+  }
+
+  function botUptime(sec: number): string {
+    if (sec <= 0) return "\u2014";
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
 
   async function loadSessions() {
     try {
@@ -519,6 +608,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
               { id: "licenses", label: "Licenses", icon: <TicketStarIcon /> },
               { id: "sessions", label: "Session IDs", icon: <KeyIcon /> },
               { id: "shop", label: "Shop Management", icon: <CartIcon /> },
+              { id: "adminbot", label: "Admin Bot", icon: <BotFaceIcon /> },
             ] as { id: AdminSection; label: string; icon: React.ReactNode }[]).map((item) => (
               <button
                 key={item.id}
@@ -1408,6 +1498,177 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
         </div>
       </div>
+
+      {section === "adminbot" && (
+        <div className="animate-fade-in">
+          {/* status */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-lg shadow-emerald-900/40">
+                  <BotFaceIcon />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Admin Bot</h3>
+                  <p className="text-xs text-slate-400">Your Discord server bot — tickets, licenses, embeds and site logging.</p>
+                </div>
+              </div>
+              {botStatus && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {botStatus.running ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-semibold text-emerald-300">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> Online
+                    </span>
+                  ) : botStatus.starting ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 font-semibold text-amber-300">Starting…</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1.5 font-semibold text-slate-400">Offline</span>
+                  )}
+                  {botStatus.running && (
+                    <>
+                      <span className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-slate-300">{botStatus.tag}</span>
+                      <span className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-slate-400">{botStatus.guildCount} server{botStatus.guildCount === 1 ? "" : "s"}</span>
+                      <span className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-slate-400">up {botUptime(botStatus.uptimeSec)}</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {botStatus?.degraded && (
+              <p className="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                Message Content Intent is off in the Discord Developer Portal — the bot runs, but ticket transcripts
+                won&apos;t include message text. Enable it under Bot → Privileged Gateway Intents for full transcripts.
+              </p>
+            )}
+            {botStatus?.lastError && !botStatus.running && (
+              <p className="mt-4 break-words rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                {botStatus.lastError}
+              </p>
+            )}
+            {botStatus?.inviteUrl && (
+              <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Invite link</p>
+                <p className="mt-1 text-xs text-slate-400">Open this in a browser (owner account) to add the bot to your server:</p>
+                <a href={botStatus.inviteUrl} target="_blank" rel="noreferrer" className="mt-2 block break-all font-mono text-xs text-emerald-300 underline decoration-emerald-500/40 hover:text-emerald-200">
+                  {botStatus.inviteUrl}
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* token + site url */}
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <h4 className="text-sm font-semibold text-white">Bot token</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Discord Developer Portal → your app → Bot → Reset Token. Stored server-side only, never shown again.
+              {botStatus?.hasToken ? ` A token is saved (${botStatus.tokenHint}).` : ""}
+            </p>
+            <input
+              type="password"
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              placeholder={botStatus?.hasToken ? "Paste a new token to replace the saved one" : "Paste the bot token"}
+              autoComplete="off"
+              className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600"
+            />
+            <div className="mt-4">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Site URL</label>
+              <input
+                value={botSiteUrl}
+                onChange={(e) => setBotSiteUrl(e.target.value)}
+                placeholder="https://your-site.up.railway.app"
+                className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600"
+              />
+              <p className="mt-1 text-[10px] text-slate-500">Used by Discord buttons like Renew Now and Buy License.</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => void startAdminBot()}
+                disabled={botBusy || (!botToken.trim() && !botStatus?.hasToken)}
+                className="btn-primary rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-40"
+              >
+                {botBusy ? "Working…" : botStatus?.hasToken ? "Save & restart bot" : "Save & start bot"}
+              </button>
+              <button
+                onClick={() => void stopAdminBot(false)}
+                disabled={botBusy || !botStatus?.running}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              >
+                Stop bot
+              </button>
+              <button
+                onClick={() => void stopAdminBot(true)}
+                disabled={botBusy || !botStatus?.hasToken}
+                className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-2.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+              >
+                Stop & forget token
+              </button>
+            </div>
+            <p className="mt-3 text-[10px] text-slate-500">The bot auto-starts again after every deploy while a token is saved.</p>
+          </div>
+
+          {/* setup */}
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <h4 className="text-sm font-semibold text-white">Setup</h4>
+            <ol className="mt-3 space-y-2 text-xs text-slate-400">
+              <li className="flex gap-2"><span className="font-semibold text-emerald-400">1.</span> Create an application at the Discord Developer Portal and open its Bot page.</li>
+              <li className="flex gap-2"><span className="font-semibold text-emerald-400">2.</span> Enable <span className="text-slate-200">Message Content Intent</span> under Privileged Gateway Intents (needed for ticket transcripts).</li>
+              <li className="flex gap-2"><span className="font-semibold text-emerald-400">3.</span> Reset Token, paste it above and press Save &amp; start — the invite link appears on this page.</li>
+              <li className="flex gap-2"><span className="font-semibold text-emerald-400">4.</span> Open the invite link with your server owner account to add the bot.</li>
+              <li className="flex gap-2"><span className="font-semibold text-emerald-400">5.</span> In Discord, run <code className="rounded bg-slate-800 px-1.5 py-0.5 text-emerald-300">/setup-logs</code> once to create the event log channels.</li>
+            </ol>
+          </div>
+
+          {/* commands */}
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <h4 className="text-sm font-semibold text-white">Commands</h4>
+            <div className="mt-3 divide-y divide-slate-800/60">
+              {([
+                ["/ticket-panel", "Admin", "Post the support ticket panel with category dropdown"],
+                ["/license", "Everyone", "Show your license, quota and expiry as a private card"],
+                ["/redeem", "Everyone", "Redeem a license key — syncs with the web dashboard instantly"],
+                ["/admin-generate-license", "Admin", "Generate a license key (tier, slots, duration like 30d or 12h)"],
+                ["/announce", "Admin", "Post a clean announcement embed with a dashboard button"],
+                ["/changelog", "Admin", "Post a versioned changelog (Added / Fixed / Improved sections)"],
+                ["/purchase-panel", "Admin", "Post the plan showcase embed with a Buy License button"],
+                ["/setup-logs", "Admin", "Create the log channels (signups, purchases, bots, errors)"],
+                ["/rename-smooth-channel", "Admin", "Rename this channel to a clean emoji-prefixed name"],
+              ] as [string, string, string][]).map(([cmd, who, desc]) => (
+                <div key={cmd} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                  <code className="rounded bg-slate-800 px-2 py-0.5 text-xs font-semibold text-emerald-300">{cmd}</code>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${who === "Admin" ? "bg-amber-500/15 text-amber-300" : "bg-slate-700 text-slate-300"}`}>{who}</span>
+                  <span className="text-xs text-slate-400">{desc}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[10px] text-slate-500">
+              Admin commands accept the server owner, members with Administrator permission, and accounts linked to a
+              website admin. Tickets close with the in-channel buttons; expiry reminder DMs go out 5 days and 1 day
+              before a license ends.
+            </p>
+          </div>
+
+          {/* log channels */}
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <h4 className="text-sm font-semibold text-white">Event logging</h4>
+            <p className="mt-1 text-xs text-slate-500">Website events land in these channels while the bot is online (webhook is used as fallback when it&apos;s offline).</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {([
+                ["logs-signups", "New account registrations"],
+                ["logs-purchases", "License activations, redemptions and paid invoices"],
+                ["logs-bots", "Bot created, started, stopped and deleted"],
+                ["logs-errors", "Critical backend failures"],
+              ] as [string, string][]).map(([name, desc]) => (
+                <div key={name} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+                  <code className="text-xs font-semibold text-emerald-300">#{name}</code>
+                  <p className="mt-1 text-[11px] text-slate-500">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* admin: edit any bot's config */}
       {manageBot && (

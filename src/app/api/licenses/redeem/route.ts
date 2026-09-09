@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redeemLicenseKey } from "@/lib/license";
+import { logDiscordEvent } from "@/lib/eventLog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

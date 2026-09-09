@@ -1,5 +1,6 @@
 import { db } from "@/db";
-import { notifyDiscord, whenCreated } from "@/lib/webhook";
+import { whenCreated } from "@/lib/webhook";
+import { logDiscordEvent } from "@/lib/eventLog";
 import { bots } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { stopBot, startBot } from "@/lib/botManager";
@@ -36,8 +37,8 @@ export async function DELETE(
   const [existing] = await db.select().from(bots).where(eq(bots.id, id));
   await stopBot(id);
   await db.delete(bots).where(eq(bots.id, id));
-  notifyDiscord({
-    title: "🗑️ Bot deleted",
+  logDiscordEvent("bot", {
+    title: "Bot deleted",
     color: 0xf43f5e,
     fields: [
       { name: "Bot", value: existing?.name ?? id, inline: true },

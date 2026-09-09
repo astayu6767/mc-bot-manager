@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import { notifyDiscord, whenCreated } from "@/lib/webhook";
+import { whenCreated } from "@/lib/webhook";
+import { logDiscordEvent } from "@/lib/eventLog";
 import { cookies } from "next/headers";
 import { db } from "@/db";
 import { users, bots, type User } from "@/db/schema";
@@ -182,7 +183,7 @@ export async function upsertDiscordUser(profile: {
       botSlots: 0,
     })
     .returning();
-  notifyDiscord({
+  logDiscordEvent("signup", {
     title: "👤 New account created",
     color: 0x5865f2,
     fields: [
@@ -217,7 +218,7 @@ export async function getOrCreateDevUser(name: string): Promise<User> {
       botSlots: 0,
     })
     .returning();
-  notifyDiscord({
+  logDiscordEvent("signup", {
     title: "👤 New account created",
     color: 0x5865f2,
     fields: [
@@ -259,7 +260,7 @@ export async function createLocalUser(params: {
       passwordHash: hashPassword(password),
     })
     .returning();
-  notifyDiscord({
+  logDiscordEvent("signup", {
     title: "👤 New account created",
     color: 0x5865f2,
     fields: [
