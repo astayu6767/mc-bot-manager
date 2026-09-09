@@ -1,6 +1,9 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- the Discord login anchor points at an API route that redirects to OAuth, not a page */
+
 import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import BotDashboard from "./BotDashboard";
 import AdminPanel from "./AdminPanel";
 import SettingsPanel from "./SettingsPanel";
@@ -23,11 +26,59 @@ type Me = {
 
 type Tab = "dashboard" | "license" | "shop" | "admin" | "addbot" | "train" | "settings";
 
+// Tabs are URL-driven: /shop, /license, /admin… so links are shareable and
+// the Discord buttons (…/#shop) land on the right tab.
+const TAB_PATHS: Record<Tab, string> = {
+  dashboard: "/",
+  license: "/license",
+  shop: "/shop",
+  admin: "/admin",
+  addbot: "/addbot",
+  train: "/train",
+  settings: "/settings",
+};
+const PATH_TABS = new Map<string, Tab>(
+  (Object.entries(TAB_PATHS) as [Tab, string][]).map(([tab, path]) => [path, tab]),
+);
+
+function tabFromPath(pathname: string): Tab {
+  return PATH_TABS.get(pathname) ?? "dashboard";
+}
+
 export default function AppShell() {
   const [me, setMe] = useState<Me | null>(null);
   const [discordConfigured, setDiscordConfigured] = useState(true);
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const pathname = usePathname();
+  const [tab, setTabState] = useState<Tab>(() => tabFromPath(pathname));
+
+  // In-app tab switches push the URL without a Next navigation, so the shell
+  // (and its loaded state) never remounts.
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next);
+    window.history.pushState({}, "", TAB_PATHS[next]);
+  }, []);
+
+  // Browser back/forward keeps the tab in sync.
+  useEffect(() => {
+    const onPop = () => setTabState(tabFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // External links (Discord Renew Now / Buy License) point at /#shop etc —
+  // honor the hash once on load.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const hash = window.location.hash.replace("#", "");
+      if (!(hash in TAB_PATHS)) return;
+      if (hash !== tabFromPath(window.location.pathname)) {
+        window.history.replaceState({}, "", TAB_PATHS[hash as Tab]);
+        setTabState(hash as Tab);
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const [mobileNav, setMobileNav] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -67,7 +118,8 @@ export default function AppShell() {
   }, []);
 
   useEffect(() => {
-    loadMe();
+    const first = setTimeout(() => loadMe(), 0);
+    return () => clearTimeout(first);
   }, [loadMe]);
 
   useEffect(() => {
@@ -121,6 +173,14 @@ export default function AppShell() {
       <LoginScreen discordConfigured={discordConfigured} onDevLogin={loadMe} />
     );
   }
+
+  // Admin-only tabs fall back to the dashboard content for regular users.
+  const activeTab: Tab =
+    tab === "admin" || tab === "addbot" || tab === "train"
+      ? me.role === "admin"
+        ? tab
+        : "dashboard"
+      : tab;
 
   const navItems: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "dashboard", label: "Bots", icon: <BotIcon /> },
@@ -179,14 +239,14 @@ export default function AppShell() {
                   ? "justify-center px-0 py-2.5"
                   : "gap-3 px-3.5 py-2.5"
               } ${
-                tab === item.key
+                activeTab === item.key
                   ? "bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 text-emerald-300 ring-1 ring-emerald-500/20"
                   : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
               }`}
             >
               <span
                 className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition ${
-                  tab === item.key
+                  activeTab === item.key
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "bg-slate-800/60 text-slate-400 group-hover:text-slate-200"
                 }`}
@@ -194,7 +254,7 @@ export default function AppShell() {
                 {item.icon}
               </span>
               {!collapsed && item.label}
-              {!collapsed && tab === item.key && (
+              {!collapsed && activeTab === item.key && (
                 <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />
               )}
             </button>
@@ -261,18 +321,18 @@ export default function AppShell() {
         </div>
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8">
-          <div key={tab} className="animate-fade-in">
-            {tab === "dashboard" && <BotDashboard meRole={me.role} />}
-            {tab === "license" && <LicensePanel />}
-            {tab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}
-            {tab === "admin" && me.role === "admin" && (
+          <div key={activeTab} className="animate-fade-in">
+            {activeTab === "dashboard" && <BotDashboard meRole={me.role} />}
+            {activeTab === "license" && <LicensePanel />}
+            {activeTab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}
+            {activeTab === "admin" && me.role === "admin" && (
               <AdminPanel meId={me.id} />
             )}
-            {tab === "addbot" && me.role === "admin" && (
+            {activeTab === "addbot" && me.role === "admin" && (
               <AdminAddBotPanel />
             )}
-            {tab === "train" && me.role === "admin" && <TrainAiPanel />}
-            {tab === "settings" && <SettingsPanel me={me} onChange={loadMe} />}
+            {activeTab === "train" && me.role === "admin" && <TrainAiPanel />}
+            {activeTab === "settings" && <SettingsPanel me={me} onChange={loadMe} />}
           </div>
         </main>
       </div>
