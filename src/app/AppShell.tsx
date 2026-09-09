@@ -8,6 +8,7 @@ import TrainAiPanel from "./TrainAiPanel";
 import LicensePanel from "./LicensePanel";
 import ShopPanel from "./ShopPanel";
 import AdminAddBotPanel from "./AdminAddBotPanel";
+import ToastHost from "./ToastHost";
 import { Logo } from "./Logo";
 
 type Me = {
@@ -137,6 +138,7 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen">
+      <ToastHost />
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-all duration-300 lg:translate-x-0 ${
           mobileNav ? "translate-x-0" : "-translate-x-full"

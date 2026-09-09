@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LockIcon } from "./Icons";
+import { SkeletonPanel } from "./Skeleton";
 
 type LicenseInfo = {
   id: string;
@@ -85,14 +87,7 @@ export default function LicensePanel() {
   }
 
   if (!loaded) {
-    return (
-      <div className="grid place-items-center py-20">
-        <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400" />
-          Loading licenses…
-        </div>
-      </div>
-    );
+    return <SkeletonPanel />;
   }
 
   if (!status) {
@@ -204,7 +199,7 @@ export default function LicensePanel() {
       {!hasLicense ? (
         <div className="mt-6 relative overflow-hidden rounded-[18px] border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-[1px]">
           <div className="rounded-[17px] bg-slate-900/80 p-8 text-center backdrop-blur">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-emerald-500/10 text-3xl ring-1 ring-emerald-500/20">🔒</div>
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20"><LockIcon size={26} /></div>
             <h3 className="mt-4 text-[15px] font-semibold text-slate-200">No active license</h3>
             <p className="mx-auto mt-2 max-w-[420px] text-[12px] leading-relaxed text-slate-400">
               You start with 0 bot slots. Redeem a key above to get slots.

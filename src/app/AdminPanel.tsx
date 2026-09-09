@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
 import { EditBotModal } from "./BotDashboard";
+import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon } from "./Icons";
+import { toast } from "./toast";
+import { SkeletonTable } from "./Skeleton";
 import { BotItem } from "./types";
 
 type AdminUser = {
@@ -313,7 +316,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
         }
       }
     } catch {
-      alert("Failed to load bot");
+      toast("Failed to load bot", "error");
     }
   }
 
@@ -379,7 +382,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
   async function createAccount() {
     if (!newUsername.trim() || !newPassword.trim()) {
-      alert("Username and password required");
+      toast("Username and password required", "error");
       return;
     }
     setBusy(true);
@@ -395,7 +398,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to create account");
+        toast(data.error || "Failed to create account", "error");
         return;
       }
       setNewUsername("");
@@ -408,11 +411,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
   async function createLicenseKey() {
     if (slots <= 0) {
-      alert("Slots must be > 0");
+      toast("Slots must be > 0", "error");
       return;
     }
     if (days === 0 && hours === 0) {
-      alert("Duration must be at least 1 hour");
+      toast("Duration must be at least 1 hour", "error");
       return;
     }
     setBusy(true);
@@ -429,7 +432,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to create license");
+        toast(data.error || "Failed to create license", "error");
         return;
       }
       setLastGeneratedKey(data.key || data.licenseKey?.key);
@@ -494,11 +497,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
   return (
     <div>
       <div className="flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-purple-700 text-xl shadow-lg shadow-purple-900/40">
-          🛡️
+        <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-purple-700 text-white shadow-lg shadow-purple-900/40">
+          <ShieldCheck />
         </div>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Admin Panel</h2>
+          <h2 className="text-xl font-bold tracking-tight text-white">Admin Panel</h2>
           <p className="text-sm text-slate-400">
             Manage users, bot slots, licenses and running bots.
           </p>
@@ -511,12 +514,12 @@ export default function AdminPanel({ meId }: { meId: string }) {
         <aside className="shrink-0 lg:w-52">
           <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/60 p-1.5 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible">
             {([
-              { id: "overview", label: "Overview", icon: "📊" },
-              { id: "users", label: "Users", icon: "👥" },
-              { id: "licenses", label: "Licenses", icon: "🎫" },
-              { id: "sessions", label: "Session IDs", icon: "🔑" },
-              { id: "shop", label: "Shop Management", icon: "🛒" },
-            ] as { id: AdminSection; label: string; icon: string }[]).map((item) => (
+              { id: "overview", label: "Overview", icon: <ChartIcon /> },
+              { id: "users", label: "Users", icon: <UsersIcon /> },
+              { id: "licenses", label: "Licenses", icon: <TicketStarIcon /> },
+              { id: "sessions", label: "Session IDs", icon: <KeyIcon /> },
+              { id: "shop", label: "Shop Management", icon: <CartIcon /> },
+            ] as { id: AdminSection; label: string; icon: React.ReactNode }[]).map((item) => (
               <button
                 key={item.id}
                 onClick={() => openSection(item.id)}
@@ -526,7 +529,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                     : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-100"
                 }`}
               >
-                <span className="text-base">{item.icon}</span>
+                <span className="text-slate-400">{item.icon}</span>
                 {item.label}
               </button>
             ))}
@@ -547,17 +550,17 @@ export default function AdminPanel({ meId }: { meId: string }) {
       </div>
               <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {([
-                  { id: "users", label: "Manage users", sub: "accounts, slots, bots", icon: "👥" },
-                  { id: "licenses", label: "License keys", sub: "generate, redeem, revoke", icon: "🎫" },
-                  { id: "sessions", label: "Session IDs", sub: "every bot's ssid", icon: "🔑" },
-                  { id: "shop", label: "Shop management", sub: "plans, LTC, invoices", icon: "🛒" },
-                ] as { id: AdminSection; label: string; sub: string; icon: string }[]).map((c) => (
+                  { id: "users", label: "Manage users", sub: "accounts, slots, bots", icon: <UsersIcon /> },
+                  { id: "licenses", label: "License keys", sub: "generate, redeem, revoke", icon: <TicketStarIcon /> },
+                  { id: "sessions", label: "Session IDs", sub: "every bot's ssid", icon: <KeyIcon /> },
+                  { id: "shop", label: "Shop management", sub: "plans, LTC, invoices", icon: <CartIcon /> },
+                ] as { id: AdminSection; label: string; sub: string; icon: React.ReactNode }[]).map((c) => (
                   <button
                     key={c.id}
                     onClick={() => openSection(c.id)}
                     className="group rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-left transition hover:-translate-y-0.5 hover:border-fuchsia-500/30"
                   >
-                    <div className="text-xl">{c.icon}</div>
+                    <div className="text-slate-300">{c.icon}</div>
                     <div className="mt-2 text-sm font-semibold text-white">{c.label}</div>
                     <div className="mt-0.5 text-[11px] text-slate-500">{c.sub}</div>
                   </button>
@@ -608,7 +611,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
 
       <div className="mt-6 space-y-3">
         {!loaded ? (
-          <p className="py-10 text-center text-slate-500">Loading users…</p>
+          <div className="py-4"><SkeletonTable n={4} /></div>
         ) : users.length === 0 ? (
           <p className="py-10 text-center text-slate-500">No users yet.</p>
         ) : (
@@ -797,8 +800,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
         <div className="relative overflow-hidden rounded-[20px] border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] via-orange-500/[0.05] to-slate-900/60 p-[1px]">
           <div className="rounded-[19px] bg-slate-900/90 backdrop-blur">
             <div className="flex items-center gap-3 px-6 py-5">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-xl shadow-[0_0_20px_rgba(245,158,11,0.3)]">
-                🎫
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+                <TicketStarIcon size={20} />
               </div>
               <div className="flex-1">
                 <h3 className="text-[15px] font-bold tracking-tight text-white">License Keys</h3>
@@ -928,7 +931,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
           </div>
           {activeKeys.length === 0 ? (
             <div className="mt-3 grid place-items-center rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/30 py-12 text-center">
-              <div className="text-2xl opacity-50">🎫</div>
+              <div className="text-slate-500 opacity-50"><TicketStarIcon size={28} /></div>
               <p className="mt-2 text-xs text-slate-500">No active keys - generate one above</p>
             </div>
           ) : (
@@ -1141,7 +1144,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   </thead>
                   <tbody className="divide-y divide-slate-800/70 bg-slate-900/30">
                     {!sessionsLoaded ? (
-                      <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">Loading…</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-6"><SkeletonTable n={4} /></td></tr>
                     ) : sessions.length === 0 ? (
                       <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No bots yet.</td></tr>
                     ) : (
@@ -1209,7 +1212,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
         <div className="relative overflow-hidden rounded-[20px] border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.08] via-indigo-500/[0.05] to-slate-900/60 p-[1px]">
           <div className="rounded-[19px] bg-slate-900/90 backdrop-blur">
             <div className="flex items-center gap-3 px-6 py-5">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-xl shadow-[0_0_20px_rgba(99,102,241,0.3)]">🛒</div>
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)]"><CartIcon size={20} /></div>
               <div className="flex-1">
                 <h3 className="text-[15px] font-bold tracking-tight text-white">Shop Management</h3>
                 <p className="text-xs text-slate-400">Manage $5 / $8 / $15 plans, discounts, owner LTC address, and invoices</p>
@@ -1229,15 +1232,15 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 <button
                   disabled={busy}
                   onClick={async () => {
-                    if (!newOwnerLtc.trim()) return alert("Enter address");
+                    if (!newOwnerLtc.trim()) return toast("Enter address", "error");
                     setBusy(true);
                     try {
                       const res = await fetch("/api/shop/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ownerLtcAddress: newOwnerLtc.trim() }) });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error);
                       setOwnerLtc(data.ownerLtcAddress);
-                      alert("Owner LTC saved");
-                    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                      toast("Owner LTC saved", "success");
+                    } catch (e: any) { toast(e.message || "Something went wrong", "error"); } finally { setBusy(false); }
                   }}
                   className="rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-500 disabled:opacity-50"
                 >
@@ -1283,7 +1286,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                           try {
                             const res = await fetch(`/api/shop/plans/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ price: p.price, bots: p.bots, hours: p.hours, discount: p.discount, popular: p.popular, active: p.active }) });
                             if (!res.ok) throw new Error((await res.json()).error);
-                          } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                          } catch (e: any) { toast(e.message || "Something went wrong", "error"); } finally { setBusy(false); }
                         }}
                         className="ml-auto rounded-lg bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
                       >
@@ -1330,7 +1333,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       if (!res.ok) throw new Error(data.error);
                       setShopPlans(prev => [...prev, { ...data.plan, features: feats, popular: newPlanPopular, active: true, finalPrice: Math.round(newPlanPrice * (1 - newPlanDiscount/100)*100)/100 }]);
                       setNewPlanTier(""); setNewPlanFeatures("");
-                    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+                    } catch (e: any) { toast(e.message || "Something went wrong", "error"); } finally { setBusy(false); }
                   }}
                   className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-500 disabled:opacity-50"
                 >
@@ -1361,8 +1364,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
                               try {
                                 const res = await fetch(`/api/shop/invoices/${inv.id}/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forcePaid: true }) });
                                 const data = await res.json();
-                                if (data.paid) alert(`Marked paid, key: ${data.licenseKey}`);
-                                else alert("Not paid yet");
+                                if (data.paid) toast(`Marked paid — key: ${data.licenseKey}`, "success");
+                                else toast("Not paid yet", "info");
                               } finally { setBusy(false); }
                             }}
                             className="rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300 ring-1 ring-amber-500/20"
@@ -1398,6 +1401,15 @@ export default function AdminPanel({ meId }: { meId: string }) {
         />
       )}
     </div>
+  );
+}
+
+function ShieldCheck() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
   );
 }
 

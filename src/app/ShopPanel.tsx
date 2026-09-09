@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "./toast";
+import { SkeletonBotCard } from "./Skeleton";
 
 type Plan = {
   id: string;
@@ -44,7 +46,6 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [checking, setChecking] = useState(false);
   const [paidInfo, setPaidInfo] = useState<{ licenseKey: string; bots: number; tier: string } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [urgent, setUrgent] = useState(false);
@@ -134,8 +135,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       const meRes = await fetch("/api/auth/me", { cache: "no-store" });
       const meData = await meRes.json();
       if (!meData.user) {
-        setToast("Please login properly to purchase – auth required.");
-        setTimeout(() => setToast(null), 4000);
+        toast("Please login properly to purchase – auth required.", "info");
         return;
       }
       // Create invoice
@@ -146,8 +146,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       });
       const data = await res.json();
       if (!res.ok) {
-        setToast(data.error || "Failed to create invoice");
-        setTimeout(() => setToast(null), 4000);
+        toast(data.error || "Failed to create invoice", "error");
         return;
       }
       setQrFailed(false);
@@ -155,8 +154,8 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       setInvoice(data.invoice);
       fetchInvoices();
     } catch {
-      setToast("Network error creating invoice");
-      setTimeout(() => setToast(null), 4000);
+      toast("Network error creating invoice", "info");
+      
     } finally {
       setBuying(null);
     }
@@ -168,20 +167,17 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       const res = await fetch(`/api/shop/invoices/${inv.id}`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok || !data.invoice) {
-        setToast(data.error || "Could not open invoice");
-        setTimeout(() => setToast(null), 3000);
+        toast(data.error || "Could not open invoice", "error");
         return;
       }
       const i = data.invoice as Invoice & { plan?: { tier: string; bots: number; hours: number } };
       if (i.status === "paid") {
-        setToast("That invoice is already paid — check your license key.");
-        setTimeout(() => setToast(null), 3500);
+        toast("That invoice is already paid — check your license key.", "info");
         fetchInvoices();
         return;
       }
       if (i.status !== "pending") {
-        setToast("That invoice has expired.");
-        setTimeout(() => setToast(null), 3000);
+        toast("That invoice has expired.", "info");
         fetchInvoices();
         return;
       }
@@ -189,8 +185,8 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       setPaidInfo(null);
       setInvoice({ ...i, tier: i.plan?.tier, bots: i.plan?.bots, hours: i.plan?.hours });
     } catch {
-      setToast("Network error opening invoice");
-      setTimeout(() => setToast(null), 3000);
+      toast("Network error opening invoice", "info");
+      
     } finally {
       setResuming(null);
     }
@@ -207,12 +203,11 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
         setInvoice(prev => (prev ? { ...prev, status: "paid" } : prev));
         fetchInvoices();
       } else {
-        setToast(`Not confirmed yet — detected ${data.balance || "0"} LTC. Send the exact amount.`);
-        setTimeout(() => setToast(null), 3500);
+        toast(`Not confirmed yet — detected ${data.balance || "0"} LTC. Send the exact amount.`, "info");
       }
     } catch {
-      setToast("Failed to check payment");
-      setTimeout(() => setToast(null), 3000);
+      toast("Failed to check payment", "info");
+      
     } finally {
       setChecking(false);
     }
@@ -256,20 +251,19 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       });
       const data = await res.json();
       if (res.ok) {
-        setToast(`Redeemed! Got ${data.license.slots} slots`);
+        toast(`Redeemed! Got ${data.license.slots} slots`, "info");
         setTimeout(() => {
-          setToast(null);
           setInvoice(null);
           setPaidInfo(null);
           if (onGoLicense) onGoLicense();
         }, 1500);
       } else {
-        setToast(data.error || "Redeem failed");
-        setTimeout(() => setToast(null), 3000);
+        toast(data.error || "Redeem failed", "error");
+        
       }
     } catch {
-      setToast("Network error redeeming");
-      setTimeout(() => setToast(null), 3000);
+      toast("Network error redeeming", "info");
+      
     }
   }
 
@@ -278,10 +272,18 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
 
   if (!loaded) {
     return (
-      <div className="grid place-items-center py-16">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-violet-400" />
-          Loading shop…
+      <div className="relative mx-auto max-w-[1100px] pb-8">
+        <div className="flex items-center gap-3">
+          <div className="animate-pulse rounded-xl bg-slate-800/70 h-11 w-11" />
+          <div className="space-y-2">
+            <div className="animate-pulse rounded-lg bg-slate-800/70 h-5 w-32" />
+            <div className="animate-pulse rounded-lg bg-slate-800/70 h-3 w-56" />
+          </div>
+        </div>
+        <div className="mt-6 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="animate-pulse rounded-2xl bg-slate-800/50 min-h-[440px]" />
+          <div className="animate-pulse rounded-2xl bg-slate-800/50 min-h-[520px]" />
+          <div className="animate-pulse rounded-2xl bg-slate-800/50 min-h-[600px]" />
         </div>
       </div>
     );
@@ -627,12 +629,6 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="fixed bottom-5 left-1/2 z-50 max-w-[90%] -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs text-slate-200 shadow-2xl">
-          {toast}
         </div>
       )}
     </div>

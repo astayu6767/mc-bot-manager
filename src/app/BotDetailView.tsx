@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BellIcon } from "./Icons";
 import { BotItem, BotStatus, LogEntry, HotbarItem, ViewSnapshot } from "./types";
 import { StatusBadge, BotAvatar } from "./BotDashboard";
 
@@ -213,7 +214,7 @@ export default function BotDetailView({
                     : "bg-slate-800/60 text-slate-400 ring-slate-700/60 hover:text-slate-200"
                 }`}
               >
-                🔔 {notifyOn ? "notify on" : "notify me"}
+                <BellIcon size={13} /> {notifyOn ? "notify on" : "notify me"}
               </button>
               {ai && ai.pollinations + ai.openrouter + ai.failed > 0 && (
                 <span

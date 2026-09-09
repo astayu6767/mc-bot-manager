@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { PlusIcon } from "./Icons";
 
 // ---------------------------------------------------------------------------
 // Add-bot wizard (quick flow for everyone):
@@ -189,8 +190,8 @@ export default function AddBotWizard({
           {/* header */}
           <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 py-5">
             <div className="flex items-center gap-4">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-xl shadow-[0_0_20px_-5px_rgba(16,185,129,0.5)]">
-                ＋
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-[0_0_20px_-5px_rgba(16,185,129,0.5)]">
+                <PlusIcon size={22} />
               </div>
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-white">

@@ -1955,15 +1955,17 @@ async function aiConverse(
   // to 450: persona + their latest message are reserved, history fills the
   // rest (oldest turns dropped first). Never blind-slice — that beheads the
   // "they said:" part and the model answers without seeing the message.
+  // SLIM persona: the chat history below carries the actual pitch (opener
+  // lines are in it), so the model must stay consistent with what it ALREADY
+  // SAID instead of improvising from hardcoded facts that may not match a
+  // custom opener script.
   const persona =
-    `ur ${selfName}, lt5 player recruiting a teammate for a 2v2 tourney (sword, spear mace, uhc tiers). ` +
-    `u and me vs another duo, win = both rankup. im playing not hosting, filming for yt. ` +
-    `under 10 words, lowercase casual, vary wording. if they mention rankup: we both get it. ` +
-    `to join: add my dc ${discordUser}. never bedwars/hypixel. `;
+    `ur ${selfName}, lt5 mc player. stay consistent with ur earlier msgs in chat. ` +
+    `under 10 words, lowercase casual, vary wording. never bedwars/hypixel. `;
   const tail = ` they said: "${latest.slice(0, 100)}". ur reply:`;
   let budget = 450 - persona.length - tail.length;
   const turnsText = history
-    .slice(-3)
+    .slice(-5)
     .map((h) => `${h.who === "me" ? "me" : "them"}: ${h.text}`);
   const kept: string[] = [];
   for (let i = turnsText.length - 1; i >= 0; i--) {

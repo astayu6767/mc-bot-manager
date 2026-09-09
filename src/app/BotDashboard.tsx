@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PlusIcon, LockIcon, TrashIcon } from "./Icons";
+import { SkeletonBotList } from "./Skeleton";
 import AddBotWizard from "./AddBotWizard";
 import { BotItem, BotStatus, LogEntry } from "./types";
 import BotDetailView from "./BotDetailView";
@@ -100,7 +102,7 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
     <div>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">My Bots</h2>
+          <h2 className="text-xl font-bold tracking-tight text-white">My Bots</h2>
           <p className="text-sm text-slate-400">
             {slots > 0 ? (
               <>
@@ -136,14 +138,14 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
           }
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-400 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <span className="text-lg leading-none">＋</span> Add bot
+          <PlusIcon size={16} /> Add bot
         </button>
       </header>
 
       {noLicense && loaded && (
         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
           <div className="flex items-start gap-3">
-            <span className="text-xl">🔒</span>
+            <LockIcon size={20} />
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-amber-200">No bot slots - license required</h3>
               <p className="mt-1 text-xs leading-relaxed text-amber-200/70">
@@ -177,7 +179,7 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
           {tab === "bots" ? (
             <section className="mt-6 animate-fade-in">
               {!loaded ? (
-                <p className="py-16 text-center text-slate-500">Loading…</p>
+                <SkeletonBotList n={3} />
               ) : items.length === 0 ? (
                 <EmptyState onAdd={() => setShowAdd(true)} />
               ) : (
@@ -449,7 +451,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         onClick={onAdd}
         className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-400 active:scale-[.98]"
       >
-        <span className="text-lg leading-none">＋</span> Add your first bot
+        <PlusIcon size={16} /> Add your first bot
       </button>
     </div>
   );
@@ -502,8 +504,8 @@ export function AddBotModal({
       <div className="premium-modal flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[24px]">
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 py-5">
           <div className="flex items-center gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-xl shadow-[0_0_20px_-5px_rgba(16,185,129,0.5)]">
-              ＋
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-[0_0_20px_-5px_rgba(16,185,129,0.5)]">
+              <PlusIcon size={22} />
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight text-white">Add a bot</h2>
@@ -699,8 +701,8 @@ function ConfirmDeleteModal({
     <Overlay onClose={onClose}>
       <div className="premium-modal flex w-full max-w-sm flex-col overflow-hidden rounded-[24px]">
         <div className="flex items-center gap-4 border-b border-white/5 bg-white/[0.02] px-6 py-5">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-rose-500 to-red-700 text-xl shadow-[0_0_20px_-5px_rgba(244,63,94,0.5)]">
-            🗑️
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-rose-500 to-red-700 text-white shadow-[0_0_20px_-5px_rgba(244,63,94,0.5)]">
+            <TrashIcon size={22} />
           </div>
           <div>
             <h2 className="text-lg font-bold tracking-tight text-white">
