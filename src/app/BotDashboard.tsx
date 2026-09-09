@@ -351,19 +351,15 @@ function BotCard({
               <h3 className="truncate text-base font-semibold">{bot.name}</h3>
               <StatusBadge status={bot.status} />
             </div>
-            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 truncate text-sm text-slate-400">
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 truncate text-sm text-slate-400">
               <span className="font-mono text-slate-300">
                 {bot.host}:{bot.port}
               </span>
-              <span className="text-slate-600">·</span>
               <span className="rounded-md bg-slate-800/60 px-1.5 py-0.5 text-xs text-slate-400">
                 {bot.version && bot.version !== "auto" ? bot.version : "auto"}
               </span>
-              {bot.username && (
-                <>
-                  <span className="text-slate-600">·</span>
-                  <span className="text-slate-400">{bot.username}</span>
-                </>
+              {bot.username && bot.username !== bot.name && (
+                <span className="text-slate-400">as {bot.username}</span>
               )}
             </p>
           </div>
@@ -371,22 +367,22 @@ function BotCard({
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             onClick={onSelect}
-            className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-sm font-semibold text-emerald-400 transition hover:bg-emerald-500/20"
+            className="flex h-9 items-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 text-sm font-semibold text-emerald-400 transition hover:bg-emerald-500/20"
           >
             Control Center →
           </button>
           <button
             onClick={onEdit}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
+            className="flex h-9 items-center rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
             title="Manage token & version"
           >
-            <GearIcon size={13} /> Manage
+            Manage
           </button>
           {running ? (
             <button
               disabled={busy}
               onClick={() => act(`/api/bots/${bot.id}/stop`)}
-              className="rounded-lg bg-amber-500/90 px-3 py-1.5 text-sm font-semibold text-amber-950 transition hover:bg-amber-400 disabled:opacity-50"
+              className="flex h-9 items-center rounded-lg bg-amber-500/90 px-3 text-sm font-semibold text-amber-950 transition hover:bg-amber-400 disabled:opacity-50"
             >
               Stop
             </button>
@@ -394,7 +390,7 @@ function BotCard({
             <button
               disabled={busy}
               onClick={() => act(`/api/bots/${bot.id}/start`)}
-              className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+              className="flex h-9 items-center rounded-lg bg-emerald-500 px-3 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
             >
               Start
             </button>
@@ -402,7 +398,7 @@ function BotCard({
           <button
             disabled={busy}
             onClick={onDelete}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-sm font-medium text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-50"
             title="Delete bot"
           >
             ✕
