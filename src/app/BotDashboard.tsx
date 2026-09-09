@@ -732,14 +732,14 @@ function Overlay({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-6">
       <div
         className="absolute inset-0 animate-fade-in bg-[#030712]/80 backdrop-blur-xl"
         onClick={onClose}
       />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative z-10 flex w-full animate-pop-in justify-center"
+        className="relative z-10 flex w-full animate-pop-in items-center justify-center"
       >
         {/* Subtle under-glow for the modal */}
         <div className="absolute -inset-1 z-[-1] rounded-[2rem] bg-gradient-to-b from-emerald-500/20 to-indigo-500/10 blur-xl opacity-60" />

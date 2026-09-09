@@ -176,14 +176,14 @@ export default function AddBotWizard({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-6">
       <div
         className="absolute inset-0 animate-fade-in bg-[#030712]/80 backdrop-blur-xl"
         onClick={onClose}
       />
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative z-10 flex w-full animate-pop-in justify-center"
+        className="relative z-10 flex w-full animate-pop-in items-center justify-center"
       >
         <div className="absolute -inset-1 z-[-1] rounded-[2rem] bg-gradient-to-b from-emerald-500/20 to-indigo-500/10 opacity-60 blur-xl" />
         <div className="premium-modal flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[24px]">

@@ -41,14 +41,13 @@ export async function POST(req: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
+    // Full detail stays in the server log; users get one clear sentence.
+    console.warn(
+      `[resolve-session] rejected: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return Response.json(
-      {
-        error:
-          err instanceof Error
-            ? err.message
-            : "Session ID rejected — grab a fresh one",
-      },
-      { status: 400 },
+      { error: "Invalid SSID, Kindly provide a new one" },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
