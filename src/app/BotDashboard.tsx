@@ -338,7 +338,7 @@ function BotCard({
   }
 
   return (
-    <li style={style} className="card-hover glass animate-card-in rounded-2xl p-4 shadow-lg shadow-black/20">
+    <div style={style} className="card-hover glass animate-card-in rounded-2xl p-4 shadow-lg shadow-black/20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <BotAvatar
@@ -362,7 +362,7 @@ function BotCard({
               {bot.username && (
                 <>
                   <span className="text-slate-600">·</span>
-                  <span className="text-slate-400">{bot.username}</span>
+                  <span className="text-slate-400">as {bot.username}</span>
                 </>
               )}
             </p>
@@ -420,7 +420,7 @@ function BotCard({
           <span>✅</span> Successfully joined the server.
         </p>
       )}
-    </li>
+    </div>
   );
 }
 
