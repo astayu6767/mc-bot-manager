@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { PlusIcon } from "./Icons";
+import { PlusIcon, SwordsIcon, MegaphoneIcon } from "./Icons";
 
 // ---------------------------------------------------------------------------
 // Add-bot wizard (quick flow for everyone):
@@ -44,20 +44,20 @@ const REGIONS = [
   { id: "na", label: "NA", blurb: "North America proxy" },
 ];
 
-const BEAM_MODES = [
+const BEAM_MODES: { id: string; title: string; blurb: string; icon: React.ReactNode }[] = [
   {
     id: "ai",
     title: "1v1 Player Method",
     blurb:
       "Joins matches, chats with AI to recruit a teammate, gets their discord.",
-    icon: "⚔️",
+    icon: <SwordsIcon size={18} />,
   },
   {
     id: "lobby",
     title: "Adbot (Standing Method)",
     blurb:
       "Stays in the lobby, advertises the trigger word, whispers repliers.",
-    icon: "📣",
+    icon: <MegaphoneIcon size={18} />,
   },
 ];
 

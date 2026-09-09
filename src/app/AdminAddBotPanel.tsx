@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PlusIcon } from "./Icons";
 import { AddBotModal } from "./BotDashboard";
 
 // Admin-only area: add bots with the full advanced form (the "old model" —
@@ -25,7 +26,7 @@ export default function AdminAddBotPanel() {
           onClick={() => setOpen(true)}
           className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)] transition hover:from-emerald-300 hover:to-emerald-400"
         >
-          ＋ Add bot (advanced)
+          <PlusIcon size={15} /> Add bot (advanced)
         </button>
       </div>
 

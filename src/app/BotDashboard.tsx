@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PlusIcon, LockIcon, TrashIcon } from "./Icons";
+import { PlusIcon, LockIcon, TrashIcon, BotFaceIcon, GearIcon } from "./Icons";
 import { SkeletonBotList } from "./Skeleton";
 import AddBotWizard from "./AddBotWizard";
 import { BotItem, BotStatus, LogEntry } from "./types";
@@ -183,10 +183,11 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
               ) : items.length === 0 ? (
                 <EmptyState onAdd={() => setShowAdd(true)} />
               ) : (
-                <ul className="grid gap-4">
-                  {items.map((bot) => (
+                <div className="grid gap-4">
+                  {items.map((bot, i) => (
                     <BotCard
                       key={bot.id}
+                      style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}
                       bot={bot}
                       onChanged={refresh}
                       onSelect={() => setActiveBotId(bot.id)}
@@ -194,7 +195,7 @@ export default function BotDashboard({ meRole = "user" }: { meRole?: string }) {
                       onDelete={() => setDeleteBot(bot)}
                     />
                   ))}
-                </ul>
+                </div>
               )}
             </section>
           ) : (
@@ -302,7 +303,7 @@ export function BotAvatar({
           style={{ imageRendering: "pixelated" }}
         />
       ) : (
-        "🤖"
+        <BotFaceIcon size={28} className="text-slate-500" />
       )}
     </div>
   );
@@ -314,12 +315,14 @@ function BotCard({
   onSelect,
   onEdit,
   onDelete,
+  style,
 }: {
   bot: BotItem;
   onChanged: () => void;
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  style?: React.CSSProperties;
 }) {
   const [busy, setBusy] = useState(false);
   const running = bot.status === "online" || bot.status === "connecting";
@@ -335,7 +338,7 @@ function BotCard({
   }
 
   return (
-    <li className="card-hover glass rounded-2xl p-4 shadow-lg shadow-black/20">
+    <li style={style} className="card-hover glass animate-card-in rounded-2xl p-4 shadow-lg shadow-black/20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <BotAvatar
@@ -355,21 +358,6 @@ function BotCard({
               <span className="text-slate-600">·</span>
               <span className="rounded-md bg-slate-800/60 px-1.5 py-0.5 text-xs text-slate-400">
                 {bot.version && bot.version !== "auto" ? bot.version : "auto"}
-              </span>
-              <span
-                className={`rounded-md px-1.5 py-0.5 text-xs ${
-                  bot.engine === "azalea"
-                    ? "bg-orange-500/15 text-orange-300"
-                    : bot.engine === "nmp"
-                      ? "bg-sky-500/15 text-sky-300"
-                      : "bg-slate-800/60 text-slate-400"
-                }`}
-              >
-                {bot.engine === "azalea"
-                  ? "Azalea"
-                  : bot.engine === "nmp"
-                    ? "NMP"
-                    : "Mineflayer"}
               </span>
               {bot.username && (
                 <>
@@ -392,7 +380,7 @@ function BotCard({
             className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
             title="Manage token & version"
           >
-            ⚙ Manage
+            <GearIcon size={13} /> Manage
           </button>
           {running ? (
             <button
@@ -653,18 +641,17 @@ function AboutPanel() {
       <h2 className="text-base font-semibold text-white">How it works</h2>
       <ol className="list-decimal space-y-2 pl-5">
         <li>
-          Click <b>Add bot</b> and paste your Minecraft access token (the bearer
-          / Yggdrasil token issued after you log in at minecraft.net).
+          Click <b>Add bot</b> and paste your Minecraft <b>session ID</b> — the
+          manager immediately shows the account it belongs to.
         </li>
         <li>
-          Enter the <b>server IP</b> (e.g. <code>play.example.net</code> or{" "}
-          <code>1.2.3.4:25565</code>).
+          Pick your <b>server</b> (minemen.club / mcpvp.club) and the{" "}
+          <b>proxy region</b> (EU / AS / NA).
         </li>
         <li>
-          The server validates the token against Minecraft services, resolves
-          your username, and connects with <b>Azalea</b> (Rust vanilla client),
-          Mineflayer, or raw <code>minecraft-protocol</code> — whichever engine
-          you picked.
+          Choose a <b>beaming mode</b>: the 1v1 player method (the bot finds a
+          teammate and chats with AI until they agree) or the standing adbot
+          (lobby advertisement + trigger word). Both connect automatically.
         </li>
         <li>
           Each bot shows whether it <b>joined</b> the server, and you can open
@@ -672,15 +659,14 @@ function AboutPanel() {
         </li>
       </ol>
       <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-amber-300 ring-1 ring-amber-500/20">
-        Note: tokens are short-lived. If a join fails with an auth error, grab a
-        fresh token. Bots only run while this server process is alive.
+        Note: session IDs are short-lived. If a join fails with an auth error,
+        grab a fresh one. Bots only run while this server process is alive.
       </p>
       <p className="rounded-lg bg-sky-500/10 px-3 py-2 text-sky-300 ring-1 ring-sky-500/20">
         Seeing <b>&quot;Disconnected: socketClosed&quot;</b>? That usually means a
-        version mismatch through the server&apos;s proxy. Re-create the bot and
-        set the exact <b>Minecraft version</b> the server runs. The manager also
-        fetches your chat-signing certificates automatically so chat works on
-        1.19+ servers.
+        version mismatch through the server&apos;s proxy. Re-create the bot with
+        a fresh session ID. The manager also fetches your chat-signing
+        certificates automatically so chat works on modern servers.
       </p>
     </section>
   );
@@ -967,7 +953,7 @@ export function EditBotModal({
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 py-5">
           <div className="flex items-center gap-4">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-slate-600 to-slate-800 text-xl shadow-lg ring-1 ring-slate-600/50">
-              ⚙
+              <GearIcon size={16} />
             </div>
             <div className="min-w-0">
               <h2 className="truncate text-lg font-bold text-white">{bot.name}</h2>

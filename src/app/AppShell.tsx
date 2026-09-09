@@ -261,7 +261,7 @@ export default function AppShell() {
         </div>
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8">
-          <div key={tab} className="animate-fade-in">
+          <div key={tab} className="animate-page-in">
             {tab === "dashboard" && <BotDashboard meRole={me.role} />}
             {tab === "license" && <LicensePanel />}
             {tab === "shop" && <ShopPanel onGoLicense={() => setTab("license")} />}

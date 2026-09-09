@@ -81,6 +81,9 @@ export default function BotDetailView({
             "failed to fill whole buffer",
             "packet explode",
             "azalea_client::plugins::connection",
+            "could not set global logger",
+            "starting azalea sidecar",
+            "azalea bridge starting",
           ];
           return !bad.some(f => line.includes(f));
         });

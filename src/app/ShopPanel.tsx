@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LockIcon } from "./Icons";
 import { toast } from "./toast";
 import { SkeletonBotCard } from "./Skeleton";
 
@@ -320,7 +321,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
             </span>
           )}
           <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-[11px] text-slate-400">
-            🔒 Secure checkout · Automatic delivery
+            <LockIcon size={12} /> Secure checkout · Automatic delivery
           </span>
         </div>
       </div>
@@ -334,7 +335,8 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
           return (
             <div
               key={plan.id}
-              className={`group relative flex flex-col rounded-2xl border p-[1px] transition duration-200 hover:-translate-y-0.5 ${
+              style={{ animationDelay: `${planIdx * 80}ms` }}
+              className={`group relative flex animate-card-in flex-col rounded-2xl border p-[1px] transition duration-200 hover:-translate-y-0.5 ${
                 [
                   "min-h-[440px]",
                   "min-h-[520px]",

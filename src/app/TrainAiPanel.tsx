@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BrainIcon } from "./Icons";
 
 type Convo = {
   id: string;
@@ -114,11 +115,11 @@ export default function TrainAiPanel() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-700 text-lg shadow-lg shadow-indigo-900/40">
-          🧠
+        <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-700 text-white shadow-lg shadow-indigo-900/40">
+          <BrainIcon size={20} />
         </div>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Train AI</h2>
+          <h2 className="text-xl font-bold tracking-tight text-white">Train AI</h2>
           <p className="text-sm text-slate-400">
             The beam AI learns from real conversations to reply better.
           </p>
