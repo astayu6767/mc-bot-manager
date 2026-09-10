@@ -642,8 +642,8 @@ function AboutPanel() {
           manager immediately shows the account it belongs to.
         </li>
         <li>
-          Pick your <b>server</b> (minemen.club / mcpvp.club) and the{" "}
-          <b>proxy region</b> (EU / AS / NA).
+          Pick your <b>server</b> (Minemen, MCPVP, CatPvP or PvP HQ) and its{" "}
+          <b>proxy region</b>.
         </li>
         <li>
           Choose a <b>beaming mode</b>: the 1v1 player method (the bot finds a

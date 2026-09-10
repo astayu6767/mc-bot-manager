@@ -17,6 +17,14 @@ import { PlusIcon, SwordsIcon, MegaphoneIcon } from "./Icons";
 
 type Profile = { name: string; id: string };
 
+type ServerRegion = {
+  id: string;
+  label: string;
+  blurb: string;
+  // full hostname to connect to (some networks use east./west. instead of na.)
+  host: string;
+};
+
 const SERVERS = [
   {
     id: "minemen",
@@ -26,6 +34,11 @@ const SERVERS = [
     ring: "ring-fuchsia-500/40",
     text: "text-fuchsia-300",
     iconHost: "eu.minemen.club",
+    regions: [
+      { id: "eu", label: "EU", blurb: "Europe proxy", host: "eu.minemen.club" },
+      { id: "na", label: "NA", blurb: "North America proxy", host: "na.minemen.club" },
+      { id: "as", label: "AS", blurb: "Asia proxy", host: "as.minemen.club" },
+    ] as ServerRegion[],
   },
   {
     id: "mcpvp",
@@ -35,13 +48,43 @@ const SERVERS = [
     ring: "ring-rose-500/40",
     text: "text-rose-300",
     iconHost: "eu.mcpvp.club",
+    regions: [
+      { id: "eu", label: "EU", blurb: "Europe proxy", host: "eu.mcpvp.club" },
+      { id: "na", label: "NA", blurb: "US proxy", host: "mcpvp.club" },
+      { id: "as", label: "AS", blurb: "Asia proxy", host: "as.mcpvp.club" },
+    ] as ServerRegion[],
   },
-];
-
-const REGIONS = [
-  { id: "eu", label: "EU", blurb: "Europe proxy" },
-  { id: "as", label: "AS", blurb: "Asia proxy" },
-  { id: "na", label: "NA", blurb: "North America proxy" },
+  {
+    id: "catpvp",
+    domain: "catpvp.xyz",
+    label: "CatPvP",
+    accent: "from-amber-500/20 to-orange-500/5",
+    ring: "ring-amber-500/40",
+    text: "text-amber-300",
+    iconHost: "catpvp.com",
+    regions: [
+      { id: "eu", label: "EU", blurb: "Europe — Germany", host: "eu.catpvp.xyz" },
+      { id: "east", label: "US East", blurb: "NA East proxy", host: "east.catpvp.xyz" },
+      { id: "west", label: "US West", blurb: "NA West proxy", host: "west.catpvp.xyz" },
+      { id: "as", label: "AS", blurb: "Asia proxy", host: "as.catpvp.xyz" },
+      { id: "au", label: "AU", blurb: "Australia proxy", host: "au.catpvp.xyz" },
+    ] as ServerRegion[],
+  },
+  {
+    id: "pvphq",
+    domain: "pvphq.com",
+    label: "PvP HQ",
+    accent: "from-indigo-500/20 to-blue-500/5",
+    ring: "ring-indigo-500/40",
+    text: "text-indigo-300",
+    iconHost: "pvphq.com",
+    regions: [
+      { id: "na", label: "NA", blurb: "North America proxy", host: "na.pvphq.com" },
+      { id: "eu", label: "EU", blurb: "Europe proxy", host: "eu.pvphq.com" },
+      { id: "as", label: "AS", blurb: "Asia proxy", host: "as.pvphq.com" },
+      { id: "au", label: "AU", blurb: "Oceania proxy", host: "au.pvphq.com" },
+    ] as ServerRegion[],
+  },
 ];
 
 const BEAM_MODES: { id: string; title: string; blurb: string; icon: React.ReactNode }[] = [
@@ -135,7 +178,7 @@ export default function AddBotWizard({
       const payload: Record<string, unknown> = {
         name: profile.name,
         token: token.trim(),
-        host: `${region}.${server.domain}`,
+        host: server.regions.find((r) => r.id === region)?.host ?? server.domain,
         port: 25565,
         version: "auto",
         engine: "azalea",
@@ -292,7 +335,10 @@ export default function AddBotWizard({
                     <button
                       key={s.id}
                       type="button"
-                      onClick={() => setServerId(s.id)}
+                      onClick={() => {
+                        setServerId(s.id);
+                        setRegion(s.regions[0]?.id ?? null);
+                      }}
                       className={`flex flex-col items-center gap-3 rounded-2xl border bg-gradient-to-b p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${s.accent} ${
                         on
                           ? `border-white/20 ring-2 ${s.ring}`
@@ -315,8 +361,8 @@ export default function AddBotWizard({
             )}
 
             {step === 2 && (
-              <div className="grid grid-cols-3 gap-3">
-                {REGIONS.map((r) => {
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {(server?.regions ?? []).map((r) => {
                   const on = region === r.id;
                   return (
                     <button
@@ -449,7 +495,7 @@ export default function AddBotWizard({
                   <li>
                     Server:{" "}
                     <b className="text-white">
-                      {region}.{server.domain}
+                      {server.regions.find((r) => r.id === region)?.host ?? server.domain}
                     </b>
                   </li>
                   <li>

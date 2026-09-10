@@ -39,7 +39,7 @@ export default function AdminAddBotPanel() {
             <b className="text-white">This page</b> opens the full form —
             Minecraft token, custom server IP &amp; port, pinned version, SOCKS
             proxy, discord user and engine. Use it for servers beyond
-            minemen/mcpvp or when you need a proxy.
+            the quick picks or when you need a proxy.
           </li>
           <li>
             The <b className="text-white">Bots</b> tab (everyone) has the quick
