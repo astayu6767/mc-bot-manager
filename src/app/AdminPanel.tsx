@@ -19,6 +19,8 @@ type AdminUser = {
   isGuest: boolean;
   discordId: string | null;
   lastIp: string | null;
+  // true when the account was made with email + password (has a password hash)
+  hasPassword: boolean;
   createdAt: string;
 };
 
@@ -116,9 +118,54 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [ipBans, setIpBans] = useState<IpBan[]>([]);
   const [banIpInput, setBanIpInput] = useState("");
   const [banBusy, setBanBusy] = useState(false);
+  // Password reset (local email + password accounts only)
+  const [pwUser, setPwUser] = useState<AdminUser | null>(null);
+  const [pwCustom, setPwCustom] = useState("");
+  const [pwResult, setPwResult] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
 
   function openConfirm(c: ConfirmState) {
     setConfirmState(c);
+  }
+
+  function openPwReset(u: AdminUser) {
+    setPwUser(u);
+    setPwCustom("");
+    setPwResult(null);
+    setPwError(null);
+  }
+
+  function closePwModal() {
+    setPwUser(null);
+    setPwCustom("");
+    setPwResult(null);
+    setPwError(null);
+  }
+
+  async function submitPwReset() {
+    if (!pwUser || pwBusy) return;
+    setPwBusy(true);
+    setPwError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${pwUser.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pwCustom.trim() ? { password: pwCustom.trim() } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPwError(data.error || "Could not reset the password");
+      } else {
+        setPwResult(data.password);
+        setPwCustom("");
+        toast(`Password reset for ${pwUser.username}`, "success");
+      }
+    } catch {
+      setPwError("Network error while resetting the password");
+    } finally {
+      setPwBusy(false);
+    }
   }
 
   async function runConfirm() {
@@ -885,6 +932,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
                           guest
                         </span>
                       )}
+                      {u.hasPassword && (
+                        <span className="rounded-full bg-slate-700/40 px-2 py-0.5 text-xs text-slate-400 ring-1 ring-slate-600/40">
+                          email+pass
+                        </span>
+                      )}
                       {u.id === meId && (
                         <span className="text-xs text-slate-500">(you)</span>
                       )}
@@ -926,6 +978,16 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   >
                     {expanded === u.id ? "Hide bots" : "View bots"}
                   </button>
+
+                  {u.hasPassword && (
+                    <button
+                      disabled={busy}
+                      onClick={() => openPwReset(u)}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+                    >
+                      Reset password
+                    </button>
+                  )}
 
                   {u.id !== meId && (
                     <>
@@ -1924,6 +1986,80 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   >
                     {confirmBusy ? "Working…" : confirmState.confirmLabel}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* admin: reset a local account's password */}
+      {pwUser && (
+        <div className="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-6">
+          <div
+            className="absolute inset-0 animate-fade-in bg-[#030712]/80 backdrop-blur-xl"
+            onClick={() => !pwBusy && closePwModal()}
+          />
+          <div className="relative z-10 flex w-full animate-pop-in items-center justify-center">
+            <div className="premium-modal w-full max-w-sm overflow-hidden rounded-[24px]">
+              <div className="p-6">
+                <h3 className="text-base font-bold text-white">Reset password</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                  {pwResult
+                    ? `New password for "${pwUser.username}" — shown only once. The old password no longer works.`
+                    : `Set a new password for "${pwUser.username}". Leave the field empty to generate a strong one.`}
+                </p>
+
+                {!pwResult && (
+                  <input
+                    value={pwCustom}
+                    onChange={(e) => setPwCustom(e.target.value)}
+                    placeholder="New password (optional, 8+ chars)"
+                    type="text"
+                    className="mt-4 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/60 focus:outline-none"
+                  />
+                )}
+
+                {pwResult && (
+                  <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                    <code className="flex-1 break-all font-mono text-sm font-bold text-emerald-200">
+                      {pwResult}
+                    </code>
+                    <button
+                      onClick={() => {
+                        void navigator.clipboard.writeText(pwResult);
+                        toast("Password copied", "info");
+                      }}
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+
+                {pwError && (
+                  <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300 ring-1 ring-rose-500/20">
+                    {pwError}
+                  </p>
+                )}
+
+                <div className="mt-6 flex gap-2">
+                  <button
+                    onClick={closePwModal}
+                    disabled={pwBusy}
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    {pwResult ? "Done" : "Cancel"}
+                  </button>
+                  {!pwResult && (
+                    <button
+                      onClick={() => void submitPwReset()}
+                      disabled={pwBusy}
+                      className="flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
+                    >
+                      {pwBusy ? "Working…" : "Reset password"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

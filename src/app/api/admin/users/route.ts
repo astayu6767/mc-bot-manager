@@ -32,6 +32,7 @@ export async function GET() {
       isGuest: u.discordId?.startsWith("dev:") ?? false,
       discordId: u.discordId,
       lastIp: u.lastIp,
+      hasPassword: u.passwordHash !== "",
       createdAt: u.createdAt,
     };
   });
