@@ -31,6 +31,7 @@ export async function GET() {
       botsOnline: online,
       isGuest: u.discordId?.startsWith("dev:") ?? false,
       discordId: u.discordId,
+      lastIp: u.lastIp,
       createdAt: u.createdAt,
     };
   });

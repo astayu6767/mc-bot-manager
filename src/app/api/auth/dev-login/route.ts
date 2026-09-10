@@ -4,6 +4,7 @@ import {
   isDiscordConfigured,
   attachSessionCookie,
 } from "@/lib/auth";
+import { getClientIp, recordUserIp } from "@/lib/ip";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
   }
   const name = (body.name ?? "").trim() || "guest";
   const user = await getOrCreateDevUser(name);
+  await recordUserIp(user.id, getClientIp(req));
   const res = NextResponse.json({ ok: true });
   attachSessionCookie(res, user.id);
   return res;

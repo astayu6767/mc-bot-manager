@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { registerLocalUser, attachSessionCookie } from "@/lib/auth";
+import { getClientIp, recordUserIp } from "@/lib/ip";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
 
   try {
     const user = await registerLocalUser(username, password);
+    await recordUserIp(user.id, getClientIp(req));
     const res = NextResponse.json({ ok: true, user: { id: user.id, username: user.username, role: user.role } });
     attachSessionCookie(res, user.id);
     return res;

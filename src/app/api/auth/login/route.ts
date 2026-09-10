@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateLocalUser, attachSessionCookie } from "@/lib/auth";
+import { getClientIp, recordUserIp } from "@/lib/ip";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
   }
 
+  await recordUserIp(user.id, getClientIp(req));
   const res = NextResponse.json({ ok: true, user: { id: user.id, username: user.username, role: user.role } });
   attachSessionCookie(res, user.id);
   return res;

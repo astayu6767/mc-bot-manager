@@ -24,7 +24,6 @@ export async function PATCH(
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: Record<string, any> = {};
   if (body.botSlots !== undefined) {
     const n = Number(body.botSlots);
@@ -69,7 +68,11 @@ export async function DELETE(
 
   const owned = await db.select().from(bots).where(eq(bots.userId, id));
   for (const b of owned) {
-    await stopBot(b.id);
+    try {
+      await stopBot(b.id);
+    } catch (err) {
+      console.warn(`[users] stopBot failed during delete of ${b.id}: ${err instanceof Error ? err.message : err}`);
+    }
   }
   await db.delete(bots).where(eq(bots.userId, id));
   await db.delete(users).where(eq(users.id, id));

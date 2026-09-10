@@ -18,6 +18,15 @@ type AdminUser = {
   botsOnline: number;
   isGuest: boolean;
   discordId: string | null;
+  lastIp: string | null;
+  createdAt: string;
+};
+
+type IpBan = {
+  id: string;
+  ip: string;
+  reason: string;
+  bannedBy: string;
   createdAt: string;
 };
 
@@ -93,6 +102,84 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [checkInput, setCheckInput] = useState("");
   const [checkBusy, setCheckBusy] = useState(false);
   const [checkResult, setCheckResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Styled confirm modal (replaces native confirm everywhere in admin)
+  type ConfirmState = {
+    title: string;
+    body: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => void | Promise<void>;
+  };
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  // IP bans
+  const [ipBans, setIpBans] = useState<IpBan[]>([]);
+  const [banIpInput, setBanIpInput] = useState("");
+  const [banBusy, setBanBusy] = useState(false);
+
+  function openConfirm(c: ConfirmState) {
+    setConfirmState(c);
+  }
+
+  async function runConfirm() {
+    if (!confirmState) return;
+    setConfirmBusy(true);
+    try {
+      await confirmState.onConfirm();
+      setConfirmState(null);
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
+
+  const loadIpBans = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/ipbans", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setIpBans(data.bans || []);
+      }
+    } catch {}
+  }, []);
+
+  async function banIpManual() {
+    const ip = banIpInput.trim();
+    if (!ip) return;
+    setBanBusy(true);
+    try {
+      const res = await fetch("/api/admin/ipbans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip, reason: "Manual ban" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Failed to ban IP", "error");
+      } else {
+        toast(`Banned ${ip}`, "info");
+        setBanIpInput("");
+        await loadIpBans();
+      }
+    } catch {
+      toast("Network error", "error");
+    } finally {
+      setBanBusy(false);
+    }
+  }
+
+  async function unbanIp(ip: string) {
+    setBanBusy(true);
+    try {
+      await fetch(`/api/admin/ipbans?ip=${encodeURIComponent(ip)}`, { method: "DELETE" });
+      await loadIpBans();
+      toast(`Unbanned ${ip}`, "info");
+    } catch {
+      toast("Network error", "error");
+    } finally {
+      setBanBusy(false);
+    }
+  }
+
   // Admin Bot (Discord) section
   type BotStatus = {
     running: boolean;
@@ -200,6 +287,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
   function openSection(id: AdminSection) {
     setSection(id);
     if (id === "sessions" && !sessionsLoaded) loadSessions();
+    if (id === "users") void loadIpBans();
   }
 
   async function checkSid() {
@@ -447,7 +535,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
   }
 
   async function removeBot(botId: string, userId: string) {
-    if (!confirm("Remove this bot?")) return;
+
     setBusy(true);
     try {
       await fetch(`/api/bots/${botId}`, { method: "DELETE" });
@@ -461,20 +549,58 @@ export default function AdminPanel({ meId }: { meId: string }) {
     }
   }
 
-  async function deleteUser(u: AdminUser) {
-    if (
-      !confirm(
-        `Delete user "${u.username}" and ALL their bots? This cannot be undone.`,
-      )
-    )
-      return;
-    setBusy(true);
-    try {
-      await fetch(`/api/admin/users/${u.id}`, { method: "DELETE" });
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
+  function deleteUser(u: AdminUser) {
+    openConfirm({
+      title: "Delete account",
+      body: `Delete "${u.username}" and ALL their bots permanently? This cannot be undone. Their IP is NOT banned — use Blacklist for that.`,
+      confirmLabel: "Delete account",
+      danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const res = await fetch(`/api/admin/users/${u.id}`, { method: "DELETE" });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            toast(data.error || "Delete failed", "error");
+            return;
+          }
+          toast(`Deleted ${u.username}`, "info");
+          await refresh();
+        } catch {
+          toast("Network error", "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+
+  function blacklistUser(u: AdminUser) {
+    openConfirm({
+      title: "Blacklist user",
+      body:
+        `Ban "${u.username}"'s IP (${u.lastIp || "no IP on record"}) and permanently delete ` +
+        "their account and bots? They will not be able to sign up again from that IP.",
+      confirmLabel: "Blacklist & delete",
+      danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const res = await fetch(`/api/admin/users/${u.id}/blacklist`, { method: "POST" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast(data.error || "Blacklist failed", "error");
+            return;
+          }
+          toast(data.note || "Blacklisted", "info");
+          await Promise.all([refresh(), loadIpBans()]);
+        } catch {
+          toast("Network error", "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
   async function createAccount() {
@@ -540,30 +666,44 @@ export default function AdminPanel({ meId }: { meId: string }) {
     }
   }
 
-  async function deleteLicenseKey(id: string, type: "key" | "license" = "key") {
-    if (!confirm(`Delete this ${type}?`)) return;
-    setBusy(true);
-    try {
-      await fetch(`/api/admin/licenses/${id}?type=${type}`, { method: "DELETE" });
-      await refreshLicenses();
-    } finally {
-      setBusy(false);
-    }
+  function deleteLicenseKey(id: string, type: "key" | "license" = "key") {
+    openConfirm({
+      title: `Delete ${type}`,
+      body: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await fetch(`/api/admin/licenses/${id}?type=${type}`, { method: "DELETE" });
+          await refreshLicenses();
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
-  async function revokeLicenseKey(id: string, type: "key" | "license" = "key") {
-    if (!confirm(`Revoke this ${type}?`)) return;
-    setBusy(true);
-    try {
-      await fetch(`/api/admin/licenses/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "revoke", type }),
-      });
-      await refreshLicenses();
-    } finally {
-      setBusy(false);
-    }
+  function revokeLicenseKey(id: string, type: "key" | "license" = "key") {
+    openConfirm({
+      title: `Revoke ${type}`,
+      body: "Revoked keys can no longer be redeemed. This cannot be undone.",
+      confirmLabel: "Revoke",
+      danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await fetch(`/api/admin/licenses/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "revoke", type }),
+          });
+          await refreshLicenses();
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
 
   const totalUsers = users.length;
@@ -753,7 +893,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       <span className="text-emerald-300">
                         {u.botsOnline} online
                       </span>{" "}
-                      · {u.botCount}/{u.botSlots} bots
+                      · {u.botCount}/{u.botSlots} bots ·{" "}
+                      <span className="font-mono text-[10px] text-slate-500">{u.lastIp || "no IP yet"}</span>
                     </div>
                   </div>
                 </div>
@@ -794,6 +935,13 @@ export default function AdminPanel({ meId }: { meId: string }) {
                         className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-40"
                       >
                         {u.role === "admin" ? "Demote" : "Make admin"}
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => blacklistUser(u)}
+                        className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+                      >
+                        Blacklist
                       </button>
                       <button
                         disabled={busy}
@@ -872,7 +1020,15 @@ export default function AdminPanel({ meId }: { meId: string }) {
                             </button>
                             <button
                               disabled={busy}
-                              onClick={() => removeBot(b.id, u.id)}
+                              onClick={() =>
+                                openConfirm({
+                                  title: "Remove bot",
+                                  body: "Remove this bot from the user's account?",
+                                  confirmLabel: "Remove",
+                                  danger: true,
+                                  onConfirm: () => removeBot(b.id, u.id),
+                                })
+                              }
                               className="rounded-lg border border-slate-700 bg-slate-800/50 px-2.5 py-1.5 text-slate-400 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-40"
                             >
                               Remove
@@ -888,6 +1044,59 @@ export default function AdminPanel({ meId }: { meId: string }) {
           ))
         )}
       </div>
+
+          {/* IP blacklist */}
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white">IP Blacklist</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Banned IPs are refused everywhere — pages and API. Blacklisting a user from the list above bans their IP automatically.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-400">{ipBans.length} banned</span>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                value={banIpInput}
+                onChange={(e) => setBanIpInput(e.target.value)}
+                placeholder="Manually ban an IP — e.g. 123.45.67.89"
+                className="w-full max-w-sm rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-600"
+              />
+              <button
+                onClick={() => void banIpManual()}
+                disabled={banBusy || !banIpInput.trim()}
+                className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+              >
+                Ban IP
+              </button>
+            </div>
+
+            {ipBans.length === 0 ? (
+              <p className="mt-4 text-xs text-slate-600">No banned IPs.</p>
+            ) : (
+              <div className="mt-4 divide-y divide-slate-800/60">
+                {ipBans.map((b) => (
+                  <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                    <div className="min-w-0">
+                      <code className="text-xs font-semibold text-rose-300">{b.ip}</code>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        {b.reason || "no reason"} · by {b.bannedBy || "unknown"} · {new Date(b.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => void unbanIp(b.ip)}
+                      disabled={banBusy}
+                      className="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+                    >
+                      Unban
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
             </div>
           )}
 
@@ -1392,14 +1601,21 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       </button>
                       <button
                         disabled={busy}
-                        onClick={async () => {
-                          if (!confirm("Delete plan?")) return;
-                          setBusy(true);
-                          try {
-                            await fetch(`/api/shop/plans/${p.id}`, { method: "DELETE" });
-                            setShopPlans(prev => prev.filter(x => x.id !== p.id));
-                          } finally { setBusy(false); }
-                        }}
+                        onClick={() =>
+                          openConfirm({
+                            title: "Delete plan",
+                            body: `Remove the ${p.tier} plan from the shop? Buyers can no longer purchase it.`,
+                            confirmLabel: "Delete plan",
+                            danger: true,
+                            onConfirm: async () => {
+                              setBusy(true);
+                              try {
+                                await fetch(`/api/shop/plans/${p.id}`, { method: "DELETE" });
+                                setShopPlans(prev => prev.filter(x => x.id !== p.id));
+                              } finally { setBusy(false); }
+                            },
+                          })
+                        }
                         className="rounded-lg border border-rose-900/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-400"
                       >
                         Del
@@ -1675,6 +1891,41 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   <p className="mt-1 text-[11px] text-slate-500">{desc}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* styled confirm modal */}
+      {confirmState && (
+        <div className="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-6">
+          <div className="absolute inset-0 animate-fade-in bg-[#030712]/80 backdrop-blur-xl" onClick={() => !confirmBusy && setConfirmState(null)} />
+          <div className="relative z-10 flex w-full animate-pop-in items-center justify-center">
+            <div className="premium-modal w-full max-w-sm overflow-hidden rounded-[24px]">
+              <div className="p-6">
+                <h3 className="text-base font-bold text-white">{confirmState.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">{confirmState.body}</p>
+                <div className="mt-6 flex gap-2">
+                  <button
+                    onClick={() => setConfirmState(null)}
+                    disabled={confirmBusy}
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => void runConfirm()}
+                    disabled={confirmBusy}
+                    className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-50 ${
+                      confirmState.danger
+                        ? "bg-rose-500 text-white hover:bg-rose-400"
+                        : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                    }`}
+                  >
+                    {confirmBusy ? "Working…" : confirmState.confirmLabel}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -12,6 +12,8 @@ export const users = pgTable("users", {
   botSlots: integer("bot_slots").notNull().default(0),
   // Password auth (local accounts)
   passwordHash: text("password_hash").notNull().default(""),
+  // Last IP the account logged in from (for the admin IP blacklist)
+  lastIp: text("last_ip"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -176,6 +178,16 @@ export const licenseReminders = pgTable("license_reminders", {
   kind: text("kind").notNull(),
   discordId: text("discord_id").notNull(),
   sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+// Banned IPs — enforced by middleware for every request.
+export const ipBans = pgTable("ip_bans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ip: text("ip").notNull().unique(),
+  reason: text("reason").notNull().default(""),
+  // display name of the admin who banned
+  bannedBy: text("banned_by").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // Discord messages that hold an auto-updating embed (e.g. the purchase

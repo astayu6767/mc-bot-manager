@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "MC Bot Manager",
   description:
     "Spin up Minecraft bots, watch them join servers, and control their consoles.",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
