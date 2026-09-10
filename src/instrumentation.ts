@@ -20,5 +20,12 @@ export async function register() {
     } catch {
       // ignore
     }
+    // Retry-loop that sweeps paid invoices to the owner LTC wallet.
+    try {
+      const { startInvoiceSweeper } = await import("@/lib/ltcSweep");
+      startInvoiceSweeper();
+    } catch {
+      // ignore
+    }
   }
 }

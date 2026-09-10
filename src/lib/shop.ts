@@ -4,7 +4,7 @@ import { eq, desc } from "drizzle-orm";
 import crypto from "crypto";
 
 // Litecoin mainnet params for bitcoinjs-lib
-const litecoinNetwork = {
+export const litecoinNetwork = {
   messagePrefix: "\x19Litecoin Signed Message:\n",
   bech32: "ltc",
   bip32: { public: 0x019da462, private: 0x019d9cfe },
@@ -34,12 +34,9 @@ export function generateLtcInvoiceAddress(): { address: string; privateKeyWif: s
   try {
     // Use bitcoinjs-lib to generate real LTC address
     // Dynamic import style to avoid top-level require issues, but we can require here
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const ecc = require("tiny-secp256k1");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ECPairFactory } = require("ecpair");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const bitcoin = require("bitcoinjs-lib");
+      const ecc = require("tiny-secp256k1");
+      const { ECPairFactory } = require("ecpair");
+      const bitcoin = require("bitcoinjs-lib");
     const ECPair = ECPairFactory(ecc);
     const keyPair = ECPair.makeRandom({ network: litecoinNetwork });
     const { address } = bitcoin.payments.p2pkh({
@@ -101,7 +98,7 @@ export async function getOwnerLtcAddress(): Promise<string> {
     const [setting] = await db.select().from(appSettings).where(eq(appSettings.key, "owner_ltc_address"));
     if (setting?.value) return setting.value;
   } catch {}
-  return process.env.OWNER_LTC_ADDRESS || "LTC1qOwnerDefaultAddressExampleForDemo12345";
+  return process.env.OWNER_LTC_ADDRESS || "ltc1qcyz0yaw2h0cgcr9nqhqty0kc0c8gw3ykfqeasy";
 }
 
 export async function setOwnerLtcAddress(address: string) {
@@ -135,10 +132,60 @@ export async function getPlanById(id: string) {
   return plan || null;
 }
 
+// How often the plan self-heal / test-plan check runs per process (ms).
+let lastPlanEnsure = 0;
+
+/**
+ * One-time $0.10 TEST plan for end-to-end LTC payment testing, plus a
+ * self-heal that corrects the old ENTERPRISE seed (15 bots -> 8).
+ * Throttled so shop page loads don't hammer the DB.
+ */
+export async function ensurePlans() {
+  const now = Date.now();
+  if (now - lastPlanEnsure < 10 * 60 * 1000) return;
+  lastPlanEnsure = now;
+  try {
+    // Self-heal: ENTERPRISE used to seed with 15 bots — the $15 tier grants 8.
+    const stale = await db.select().from(shopPlans).where(eq(shopPlans.tier, "ENTERPRISE"));
+    for (const plan of stale) {
+      if (plan.bots === 15) {
+        await db.update(shopPlans).set({
+          bots: 8,
+          features: plan.features.replace("15 concurrent bots", "8 concurrent bots"),
+        }).where(eq(shopPlans.id, plan.id));
+        console.log(`[shop] self-heal: ENTERPRISE ${plan.id} bots 15 -> 8`);
+      }
+    }
+    // One-time $0.10 test plan (guarded by a settings flag so deleting it in
+    // the admin panel actually removes it).
+    const [flag] = await db.select().from(appSettings).where(eq(appSettings.key, "test_plan_created"));
+    if (!flag) {
+      await db.insert(shopPlans).values({
+        tier: "TEST",
+        price: 0.1,
+        bots: 1,
+        hours: 1,
+        features: JSON.stringify(["1 bot slot", "payment-flow test plan", "instant delivery, same as paid tiers"]),
+        popular: "false",
+        active: "true",
+        discount: 0,
+      });
+      await db.insert(appSettings).values({ key: "test_plan_created", value: "true" })
+        .onConflictDoUpdate({ target: appSettings.key, set: { value: "true" } });
+      console.log("[shop] created $0.10 TEST plan");
+    }
+  } catch (e) {
+    console.warn("[shop] ensurePlans failed:", e instanceof Error ? e.message : e);
+  }
+}
+
 export async function createDefaultPlansIfEmpty() {
   try {
     const existing = await db.select().from(shopPlans);
-    if (existing.length > 0) return existing;
+    if (existing.length > 0) {
+      await ensurePlans();
+      return existing;
+    }
     // Create 3 default plans $5 $8 $15
     const defaults = [
       {
@@ -180,10 +227,10 @@ export async function createDefaultPlansIfEmpty() {
       {
         tier: "ENTERPRISE",
         price: 15,
-        bots: 15,
+        bots: 8,
         hours: 24,
         features: JSON.stringify([
-          "15 concurrent bots",
+          "8 concurrent bots",
           "24 bot-hours / day",
           "Full analytics & live console",
           "Custom behaviors & API access",

@@ -98,6 +98,11 @@ async function loginWithIntents(token: string, intents: number[], degraded: bool
     }
 
     startReminderLoop(client);
+    // Catch purchase panels up with any website changes made while offline.
+    try {
+      const { refreshPurchasePanels } = await import("./panels");
+      void refreshPurchasePanels();
+    } catch {}
     console.log(`[discord-bot] online as ${state.tag} (${ready.guilds.cache.size} servers)`);
   });
 

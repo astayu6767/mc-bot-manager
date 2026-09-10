@@ -20,6 +20,8 @@ import { logDiscordEvent } from "@/lib/eventLog";
 import { brandEmbed, BRAND, fullDate, relative } from "./embeds";
 import { bullets, parseDuration, smoothChannelName } from "./utils";
 import { getSiteUrl } from "./settings";
+import { buildPlanDetailPayload, buildPurchasePanelPayload } from "./purchasePanel";
+import { savePanelRef } from "./panels";
 import { botState } from "./state";
 import { openTicketFromSelect, postTicketPanel, handleTicketButton } from "./tickets";
 
@@ -457,52 +459,10 @@ async function cmdPurchasePanel(interaction: ChatInputCommandInteraction): Promi
   }
 
   const siteUrl = await getSiteUrl();
-  const embed = brandEmbed({
-    title: "License Plans",
-    description:
-      "Pick a plan below to see the details, then grab your license — paid in LTC, key delivered instantly.",
-    color: BRAND.emerald,
-  });
-  if (siteUrl) embed.addFields({ name: "Dashboard", value: siteUrl, inline: false });
-  for (const plan of plans) {
-    const finalPrice = plan.discount > 0
-      ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
-      : plan.price;
-    embed.addFields({
-      name: `${plan.tier}${plan.popular === "true" ? " ⭐" : ""} — $${finalPrice}/mo`,
-      value: `${plan.bots} bot slots · ${plan.hours}h/day runtime`,
-      inline: false,
-    });
-  }
-
-  const select = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId("plan:buy")
-      .setPlaceholder("Choose a plan to purchase…")
-      .addOptions(
-        plans.slice(0, 25).map((plan) => {
-          const finalPrice = plan.discount > 0
-            ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
-            : plan.price;
-          return {
-            label: plan.tier.slice(0, 100),
-            value: plan.id,
-            description: `$${finalPrice}/mo · ${plan.bots} bots · ${plan.hours}h/day`.slice(0, 100),
-            emoji: plan.popular === "true" ? "⭐" : undefined,
-          };
-        }),
-      ),
-  );
-  const rows: ActionRowBuilder<StringSelectMenuBuilder | ButtonBuilder>[] = [select];
-  if (siteUrl) {
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setLabel("Buy License").setStyle(ButtonStyle.Link).setURL(`${siteUrl}/#shop`),
-        new ButtonBuilder().setLabel("View Web Dashboard").setStyle(ButtonStyle.Link).setURL(siteUrl),
-      ),
-    );
-  }
-  await target.send({ embeds: [embed], components: rows });
+  const { embeds, components } = buildPurchasePanelPayload(plans, siteUrl);
+  const sent = await target.send({ embeds, components });
+  // Track the message so it auto-edits whenever plans change on the website.
+  await savePanelRef(target.guild.id, target.id, sent.id);
   await interaction.reply({
     embeds: [brandEmbed({ title: "Purchase panel posted", color: BRAND.emerald })],
     flags: MessageFlags.Ephemeral,
@@ -518,33 +478,8 @@ async function handlePlanSelect(interaction: StringSelectMenuInteraction): Promi
     return;
   }
   const siteUrl = await getSiteUrl();
-  const finalPrice = plan.discount > 0
-    ? Math.round(plan.price * (1 - plan.discount / 100) * 100) / 100
-    : plan.price;
-  let features: string[] = [];
-  try {
-    features = JSON.parse(plan.features || "[]");
-  } catch {}
-  const embed = brandEmbed({
-    title: `${plan.tier}${plan.popular === "true" ? " — most popular" : ""}`,
-    description:
-      (features.length > 0 ? bullets(features.slice(0, 8).join(",")) : `Run ${plan.bots} bots, ${plan.hours}h a day.`) +
-      "\n\nPay with Litecoin — your license key is delivered instantly after payment.",
-    color: plan.popular === "true" ? BRAND.violet : BRAND.emerald,
-  });
-  embed.addFields(
-    { name: "Price", value: `$${finalPrice} / month`, inline: true },
-    { name: "Bot slots", value: String(plan.bots), inline: true },
-    { name: "Runtime", value: `${plan.hours}h / day`, inline: true },
-  );
-  const rows = siteUrl
-    ? [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setLabel("Buy License").setStyle(ButtonStyle.Link).setURL(`${siteUrl}/#shop`),
-        ),
-      ]
-    : [];
-  await interaction.editReply({ embeds: [embed], components: rows });
+  const { embeds, components } = buildPlanDetailPayload(plan, siteUrl);
+  await interaction.editReply({ embeds, components });
 }
 
 async function cmdSetupLogs(interaction: ChatInputCommandInteraction): Promise<void> {

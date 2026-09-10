@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { refreshDiscordPanels } from "@/lib/eventLog";
 import {
   BOT_TOKEN_KEY,
   getBotStatus,
@@ -63,6 +64,8 @@ export async function POST(req: Request) {
       } else {
         await deleteSetting(SITE_URL_KEY);
       }
+      // Panel buttons link to the site — re-render them with the new URL.
+      refreshDiscordPanels();
     }
 
     if (typeof body.token === "string" && body.token.trim()) {

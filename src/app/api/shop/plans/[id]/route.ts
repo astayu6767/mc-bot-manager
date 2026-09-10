@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { shopPlans } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { refreshDiscordPanels } from "@/lib/eventLog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,6 +29,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const [updated] = await db.update(shopPlans).set(updates).where(eq(shopPlans.id, id)).returning();
     if (!updated) return Response.json({ error: "Not found" }, { status: 404 });
+    refreshDiscordPanels();
     return Response.json({ plan: updated });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
@@ -42,6 +44,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
   try {
     await db.delete(shopPlans).where(eq(shopPlans.id, id));
+    refreshDiscordPanels();
     return Response.json({ ok: true });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });

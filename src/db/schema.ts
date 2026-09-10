@@ -178,6 +178,19 @@ export const licenseReminders = pgTable("license_reminders", {
   sentAt: timestamp("sent_at").notNull().defaultNow(),
 });
 
+// Discord messages that hold an auto-updating embed (e.g. the purchase
+// panel) — refreshed whenever the website data behind them changes.
+export const discordPanels = pgTable("discord_panels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  messageId: text("message_id").notNull(),
+  // currently only "purchase"
+  kind: text("kind").notNull().default("purchase"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Bot = typeof bots.$inferSelect;

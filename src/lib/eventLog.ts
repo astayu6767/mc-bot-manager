@@ -12,6 +12,21 @@ export type SiteEvent = {
   fields?: { name: string; value: string; inline?: boolean }[];
 };
 
+/**
+ * Ask the Discord bot to re-render its tracked purchase panels (fire and
+ * forget — never blocks or breaks the request that triggered it).
+ */
+export function refreshDiscordPanels(): void {
+  void (async () => {
+    try {
+      const { refreshPurchasePanels } = await import("@/server/discord/panels");
+      await refreshPurchasePanels();
+    } catch (err) {
+      console.warn(`[eventLog] panel refresh failed: ${err instanceof Error ? err.message : err}`);
+    }
+  })();
+}
+
 export function logDiscordEvent(
   kind: "signup" | "purchase" | "bot" | "error",
   event: SiteEvent,

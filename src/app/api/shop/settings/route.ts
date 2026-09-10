@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getOwnerLtcAddress, setOwnerLtcAddress } from "@/lib/shop";
+import { refreshDiscordPanels } from "@/lib/eventLog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Invalid LTC address" }, { status: 400 });
     }
     await setOwnerLtcAddress(ownerLtcAddress.trim());
+    refreshDiscordPanels();
     return Response.json({ ok: true, ownerLtcAddress: ownerLtcAddress.trim() });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });

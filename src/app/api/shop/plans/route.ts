@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { shopPlans } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { createDefaultPlansIfEmpty, getAllPlans, getLtcPriceUSD } from "@/lib/shop";
+import { refreshDiscordPanels } from "@/lib/eventLog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
       active: active === false ? "false" : "true",
       discount: Number(discount) || 0,
     }).returning();
+    refreshDiscordPanels();
     return Response.json({ plan });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });

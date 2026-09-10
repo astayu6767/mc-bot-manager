@@ -113,14 +113,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     ],
   });
 
-  // Simulate forwarding to owner address (in real implementation, we would sweep UTXOs)
-  // For good enough, we mark as forwarded after 2 seconds
-  setTimeout(async () => {
-    try {
-      await db.update(invoices).set({ status: "forwarded" }).where(eq(invoices.id, id));
-      console.log(`[SHOP] Invoice ${id} payment ${invoice.amountLTC} LTC from ${invoice.ltcAddress} forwarded to owner ${invoice.ownerLtcAddress}`);
-    } catch {}
-  }, 2000);
+  // Real forwarding: sweep the invoice address UTXOs to the owner wallet.
+  // Fire-and-forget — the background sweeper retries if this attempt fails.
+  import("@/lib/ltcSweep").then(({ forwardInvoice }) => {
+    void forwardInvoice(id);
+  }).catch(() => {});
 
   return Response.json({
     paid: true,
