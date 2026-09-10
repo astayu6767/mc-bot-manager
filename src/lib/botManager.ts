@@ -1945,6 +1945,16 @@ async function aiConverse(
   if (/\b(server|srv|ip|address|adress)\b/.test(t) || /\bwhere\b.{0,20}\b(play|hop|join)\b/.test(t)) {
     return { intent: "question", reply: `its ${serverIp}` };
   }
+  // Gamemode questions answer from code too — every supported server is a
+  // sword-practice network, but the model invented "lifesteal"/"bedwars"
+  // because it has no idea what server it's on.
+  if (
+    /\bgame ?modes?\b/.test(t) ||
+    /\b(what|which|wat)\b.{0,20}\b(modes?|games?|play(ing)?)\b/.test(t) ||
+    /\bmodes?\s*\??\s*$/.test(t)
+  ) {
+    return { intent: "question", reply: "sword" };
+  }
 
   // 2) Anything else → let the model write a short in-character reply.
   // (discord/ip/channel handling is done in code by the beam loop, not the
@@ -1961,7 +1971,7 @@ async function aiConverse(
   // custom opener script.
   const persona =
     `ur ${selfName}, lt5 mc player. stay consistent with ur earlier msgs in chat. ` +
-    `under 10 words, lowercase casual, vary wording. never bedwars/hypixel. `;
+    `under 10 words, lowercase casual, vary wording. never bedwars/hypixel/lifesteal, u play sword practice. `;
   const tail = ` they said: "${latest.slice(0, 100)}". ur reply:`;
   let budget = 450 - persona.length - tail.length;
   const turnsText = history
@@ -1988,6 +1998,7 @@ async function aiConverse(
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\bhypixel\b/gi, serverIp)
       .replace(/\bbedwars\b/gi, "2v2 pvp")
+      .replace(/\b(lifesteal|life ?steal|skyblock|sky ?block|factions)\b/gi, "sword pvp")
       .slice(0, 90);
     if (reply) {
       aiProviderLog.push({ provider: ai.provider, ms: ai.ms });
