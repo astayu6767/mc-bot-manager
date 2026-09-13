@@ -12,7 +12,8 @@
 const TOKENHARBOR_BASE = "https://tokenharbor.ai/v1/chat/completions";
 const POLLINATIONS_BASE = "https://gen.pollinations.ai/text";
 
-const DEFAULT_TOKENHARBOR_KEY = "thk_live_2hMmxlJhj3oBYTM13_dvtPCcBuAFZiBaEbMDVViZt7jCDuXe-L7ga3ZMhj6Z4DIj";
+// Live-verified key (owner-tested: deepseek-v4-flash:free returns instantly).
+const DEFAULT_TOKENHARBOR_KEY = "thk_live_VUUcmiBvdk3XL_6OlpdSefgAsFixmRfJEGYNVztN1Ypsd8T6KAsSA67SC-SxWbDd";
 const DEFAULT_TOKENHARBOR_MODEL = "deepseek-v4-flash:free";
 const DEFAULT_POLLINATIONS_KEYS = [
   "sk_qbR3YL6rZwribqxDVJPQgvaqUKAUoqhw",
