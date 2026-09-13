@@ -4,6 +4,7 @@ import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
 import { aiText, lastAiError } from "@/lib/ai";
+import { isMaintenanceOn } from "@/lib/maintenance";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -690,6 +691,16 @@ async function startRawNmpBot(record: Bot, rt: BotRuntime) {
 }
 
 export async function startBot(record: Bot): Promise<void> {
+  // Maintenance lock — while the site is in maintenance no bot may start.
+  // Covers every path: manual start, bot create, and the boot resume loop.
+  if (await isMaintenanceOn()) {
+    const mrt = getOrCreateRuntime(record.id);
+    mrt.manualStop = true;
+    mrt.beamLoop = false;
+    log(mrt, "system", "Start blocked — the site is in maintenance.");
+    await setDbStatus(record.id, "offline", "Site is currently in maintenance");
+    return;
+  }
   const rt = getOrCreateRuntime(record.id);
   rt.manualStop = false;
 
@@ -1887,20 +1898,23 @@ export function getAiProviderStats(): {
   lastProvider: string | null;
   pollinations: number;
   openrouter: number;
+  tokenharbour: number;
   failed: number;
   lastLatencyMs: number;
 } {
   const last = aiProviderLog[aiProviderLog.length - 1] || null;
-  const tally = { pollinations: 0, openrouter: 0, failed: 0 };
+  const tally = { pollinations: 0, openrouter: 0, tokenharbour: 0, failed: 0 };
   for (const e of aiProviderLog.slice(-50)) {
     if (e.provider === "pollinations") tally.pollinations++;
     else if (e.provider === "openrouter") tally.openrouter++;
+    else if (e.provider === "tokenharbour") tally.tokenharbour++;
     else tally.failed++;
   }
   return {
     lastProvider: last ? last.provider : null,
     pollinations: tally.pollinations,
     openrouter: tally.openrouter,
+    tokenharbour: tally.tokenharbour,
     failed: tally.failed,
     lastLatencyMs: last ? last.ms : 0,
   };

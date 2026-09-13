@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BellIcon } from "./Icons";
 import { BotItem, BotStatus, LogEntry, HotbarItem, ViewSnapshot } from "./types";
 import { StatusBadge, BotAvatar } from "./BotDashboard";
+import { toast } from "./toast";
 
 export default function BotDetailView({
   bot,
@@ -24,6 +25,7 @@ export default function BotDetailView({
     lastProvider: string | null;
     pollinations: number;
     openrouter: number;
+    tokenharbour: number;
     failed: number;
     lastLatencyMs: number;
   } | null>(null);
@@ -145,7 +147,15 @@ export default function BotDetailView({
   async function act(action: string, method = "POST") {
     setActing(true);
     try {
-      await fetch(`/api/bots/${bot.id}/${action}`, { method });
+      const res = await fetch(`/api/bots/${bot.id}/${action}`, { method });
+      if (!res.ok) {
+        try {
+          const data = await res.json();
+          if (data?.error) toast(String(data.error), "error");
+        } catch {
+          // non-JSON error — the poll below still reflects the state
+        }
+      }
       await onChanged();
       await poll();
     } finally {
@@ -219,14 +229,14 @@ export default function BotDetailView({
               >
                 <BellIcon size={13} /> {notifyOn ? "notify on" : "notify me"}
               </button>
-              {ai && ai.pollinations + ai.openrouter + ai.failed > 0 && (
+              {ai && ai.pollinations + ai.openrouter + ai.tokenharbour + ai.failed > 0 && (
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
                     ai.lastProvider
                       ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
                       : "bg-rose-500/15 text-rose-300 ring-rose-500/30"
                   }`}
-                  title={`pollinations: ${ai.pollinations} · openrouter: ${ai.openrouter} · failed: ${ai.failed}`}
+                  title={`tokenharbour: ${ai.tokenharbour} · pollinations: ${ai.pollinations} · openrouter: ${ai.openrouter} · failed: ${ai.failed}`}
                 >
                   AI:{" "}
                   {ai.lastProvider

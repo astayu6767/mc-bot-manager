@@ -1,14 +1,19 @@
 // AI text provider for beam conversations.
 //
 // Providers (tried in order, env-configured; defaults baked in per owner):
-//   POLLINATIONS_API_KEYS  comma-separated keys (default: two baked-in keys)
-//   POLLINATIONS_MODEL     default "MarcosFRG/deepseek-v4-pro"
-//   OPENROUTER_API_KEY     fallback provider
-//   AI_MODEL               openrouter model, default "nvidia/nemotron-3.5-lightning:free"
-//   AI_PROVIDER            "pollinations" | "openrouter" | "auto" (default auto)
+//   TOKENHARBOR_API_KEY     primary provider (default: baked-in live key)
+//   TOKENHARBOR_MODEL       default "deepseek-v4-flash:free"
+//   POLLINATIONS_API_KEYS   comma-separated keys (default: two baked-in keys)
+//   POLLINATIONS_MODEL      default "deepseek-pro"
+//   OPENROUTER_API_KEY      last-resort provider
+//   AI_MODEL                openrouter model, default "nvidia/nemotron-3.5-lightning:free"
+//   AI_PROVIDER             "tokenharbour" | "pollinations" | "openrouter" | "auto" (default auto)
 
+const TOKENHARBOR_BASE = "https://tokenharbor.ai/v1/chat/completions";
 const POLLINATIONS_BASE = "https://gen.pollinations.ai/text";
 
+const DEFAULT_TOKENHARBOR_KEY = "thk_live_2hMmxlJhj3oBYTM13_dvtPCcBuAFZiBaEbMDVViZt7jCDuXe-L7ga3ZMhj6Z4DIj";
+const DEFAULT_TOKENHARBOR_MODEL = "deepseek-v4-flash:free";
 const DEFAULT_POLLINATIONS_KEYS = [
   "sk_qbR3YL6rZwribqxDVJPQgvaqUKAUoqhw",
   "sk_rCHV415WKB5wPpxHe0fudPgBqe3noHa9",
@@ -19,6 +24,10 @@ const DEFAULT_OPENROUTER_KEY = "sk-or-v1-9858f4e2fd88017f0c90fd008d53e15809f9ff2
 // intermittently — that caused the "This operation was aborted" cascade.
 const DEFAULT_POLLINATIONS_MODEL = "deepseek-pro";
 const DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
+
+function tokenHarbourKey(): string {
+  return (process.env.TOKENHARBOR_API_KEY || "").trim() || DEFAULT_TOKENHARBOR_KEY;
+}
 
 function pollinationsKeys(): string[] {
   const env = (process.env.POLLINATIONS_API_KEYS || "")
@@ -31,17 +40,23 @@ function pollinationsKeys(): string[] {
 // Sticky key = index of the key that last WORKED. Free-tier keys get rate
 // limited at random; preferring the healthy one halves the failure surface.
 let stickyKeyIdx = 0;
+let lastThError = "";
 let lastPolError = "";
 let lastOrError = "";
 
-// Both provider error chains — never overwritten, so the console shows the
-// FULL reason (e.g. pollinations rate-limit + openrouter key dead).
+// All provider error chains — never overwritten, so the console shows the
+// FULL reason (e.g. tokenharbour model unknown + pollinations rate-limit).
 export function lastAiError(): string {
-  return [lastPolError, lastOrError].filter(Boolean).join(" | ");
+  return [lastThError, lastPolError, lastOrError].filter(Boolean).join(" | ");
 }
 
-export function aiStatus(): { pollinations: boolean; openrouter: boolean } {
+export function aiStatus(): {
+  tokenharbour: boolean;
+  pollinations: boolean;
+  openrouter: boolean;
+} {
   return {
+    tokenharbour: Boolean(tokenHarbourKey()),
     pollinations: pollinationsKeys().length > 0,
     openrouter: Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY),
   };
@@ -65,6 +80,55 @@ function stripReasoning(raw: string): string {
     }
   }
   return t.replace(/^["'`]+|["'`]+$/g, "").trim();
+}
+
+// TokenHarbour — OpenAI-compatible chat completions endpoint. Primary
+// provider. Single attempt with a tight cap: if the free model is cold or
+// the key/model is misconfigured, the beam falls through to pollinations
+// fast instead of burning the whole turn budget.
+async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<string | null> {
+  const key = tokenHarbourKey();
+  if (!key) return null;
+  const model = process.env.TOKENHARBOR_MODEL || DEFAULT_TOKENHARBOR_MODEL;
+  timeoutMs = Math.min(timeoutMs, 9000);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(TOKENHARBOR_BASE, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 120,
+      }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const json = await res.json();
+      const raw = json?.choices?.[0]?.message?.content || "";
+      const text = stripReasoning(String(raw));
+      if (text) {
+        lastThError = "";
+        return text;
+      }
+      lastThError = "tokenharbour: empty reply";
+      console.warn(`[ai] ${lastThError}`);
+    } else {
+      const body = (await res.text()).slice(0, 80).replace(/\s+/g, " ");
+      lastThError = `tokenharbour: HTTP ${res.status}${body ? ` (${body})` : ""}`.slice(0, 250);
+      console.warn(`[ai] ${lastThError}`);
+    }
+  } catch (err) {
+    lastThError = `tokenharbour: ${err instanceof Error ? err.message : String(err)}`.slice(0, 250);
+    console.warn(`[ai] ${lastThError}`);
+  }
+  return null;
 }
 
 async function pollinationsText(prompt: string, timeoutMs: number): Promise<string | null> {
@@ -156,27 +220,35 @@ async function openRouterText(prompt: string, timeoutMs: number): Promise<string
 
 export type AiResult = { text: string | null; provider: string | null; ms: number };
 
-// Generate a short reply from a prompt. Pollinations first (sticky-key
-// failover + one retry pass), then OpenRouter. provider is null when
-// everything failed — check lastAiError() for the reason.
+// Generate a short reply from a prompt. Provider order (default auto):
+// tokenharbour → pollinations (sticky-key failover + retry pass) →
+// openrouter. provider is null when everything failed — check
+// lastAiError() for the reason.
 export async function aiText(prompt: string, timeoutMs = 18000): Promise<AiResult> {
   const started = Date.now();
   const prefer = (process.env.AI_PROVIDER || "auto").toLowerCase();
+  const hasTh = Boolean(tokenHarbourKey());
   const hasPol = pollinationsKeys().length > 0;
   const hasOr = Boolean((process.env.OPENROUTER_API_KEY || "").trim() || DEFAULT_OPENROUTER_KEY);
 
-  const polFirst = prefer === "pollinations" || (prefer === "auto" && hasPol);
-  if (polFirst && hasPol) {
-    const t = await pollinationsText(prompt, timeoutMs);
-    if (t) return { text: t, provider: "pollinations", ms: Date.now() - started };
-  }
-  if (hasOr && prefer !== "pollinations") {
-    const t = await openRouterText(prompt, timeoutMs);
-    if (t) return { text: t, provider: "openrouter", ms: Date.now() - started };
-  }
-  if (hasPol && !polFirst) {
-    const t = await pollinationsText(prompt, timeoutMs);
-    if (t) return { text: t, provider: "pollinations", ms: Date.now() - started };
+  type Provider = "tokenharbour" | "pollinations" | "openrouter";
+  let order: Provider[];
+  if (prefer === "tokenharbour") order = ["tokenharbour", "pollinations", "openrouter"];
+  else if (prefer === "pollinations") order = ["pollinations", "tokenharbour", "openrouter"];
+  else if (prefer === "openrouter") order = ["openrouter", "tokenharbour", "pollinations"];
+  else order = ["tokenharbour", "pollinations", "openrouter"]; // auto — tokenharbour is primary
+
+  for (const p of order) {
+    if (p === "tokenharbour" && hasTh) {
+      const t = await tokenHarbourText(prompt, timeoutMs);
+      if (t) return { text: t, provider: "tokenharbour", ms: Date.now() - started };
+    } else if (p === "pollinations" && hasPol) {
+      const t = await pollinationsText(prompt, timeoutMs);
+      if (t) return { text: t, provider: "pollinations", ms: Date.now() - started };
+    } else if (p === "openrouter" && hasOr) {
+      const t = await openRouterText(prompt, timeoutMs);
+      if (t) return { text: t, provider: "openrouter", ms: Date.now() - started };
+    }
   }
   return { text: null, provider: null, ms: Date.now() - started };
 }

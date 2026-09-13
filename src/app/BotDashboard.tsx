@@ -6,6 +6,7 @@ import { SkeletonBotList } from "./Skeleton";
 import AddBotWizard from "./AddBotWizard";
 import { BotItem, BotStatus, LogEntry } from "./types";
 import BotDetailView from "./BotDetailView";
+import { toast } from "./toast";
 
 const STATUS_META: Record<
   BotStatus,
@@ -327,7 +328,15 @@ function BotCard({
   async function act(path: string, method = "POST") {
     setBusy(true);
     try {
-      await fetch(path, { method });
+      const res = await fetch(path, { method });
+      if (!res.ok) {
+        try {
+          const data = await res.json();
+          if (data?.error) toast(String(data.error), "error");
+        } catch {
+          // non-JSON error — the refresh below still reflects the state
+        }
+      }
       await onChanged();
     } finally {
       setBusy(false);

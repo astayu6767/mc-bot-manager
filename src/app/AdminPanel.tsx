@@ -124,6 +124,9 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [pwResult, setPwResult] = useState<string | null>(null);
   const [pwBusy, setPwBusy] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
+  // Maintenance mode
+  const [maintenanceOn, setMaintenanceOn] = useState(false);
+  const [maintBusy, setMaintBusy] = useState(false);
 
   function openConfirm(c: ConfirmState) {
     setConfirmState(c);
@@ -188,6 +191,60 @@ export default function AdminPanel({ meId }: { meId: string }) {
       }
     } catch {}
   }, []);
+
+  const loadMaintenance = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/maintenance", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceOn(Boolean(data.on));
+      }
+    } catch {}
+  }, []);
+
+  async function applyMaintenance(on: boolean) {
+    if (maintBusy) return;
+    setMaintBusy(true);
+    try {
+      const res = await fetch("/api/admin/maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Could not toggle maintenance", "error");
+      } else {
+        setMaintenanceOn(Boolean(data.on));
+        toast(
+          data.on
+            ? `Maintenance ON — ${data.stopped} bot(s) stopped`
+            : "Maintenance OFF — bots can start again",
+          data.on ? "info" : "success",
+        );
+      }
+    } catch {
+      toast("Network error while toggling maintenance", "error");
+    } finally {
+      setMaintBusy(false);
+    }
+  }
+
+  function toggleMaintenance() {
+    if (maintenanceOn) {
+      void applyMaintenance(false);
+      return;
+    }
+    openConfirm({
+      title: "Enable maintenance",
+      body:
+        "Every running bot stops immediately and nobody can start bots until you turn this off. " +
+        "Users trying to start a bot will see a maintenance message.",
+      confirmLabel: "Stop all bots",
+      danger: true,
+      onConfirm: () => applyMaintenance(true),
+    });
+  }
 
   async function banIpManual() {
     const ip = banIpInput.trim();
@@ -334,7 +391,10 @@ export default function AdminPanel({ meId }: { meId: string }) {
   function openSection(id: AdminSection) {
     setSection(id);
     if (id === "sessions" && !sessionsLoaded) loadSessions();
-    if (id === "users") void loadIpBans();
+    if (id === "users") {
+      void loadIpBans();
+      void loadMaintenance();
+    }
   }
 
   async function checkSid() {
@@ -1106,6 +1166,43 @@ export default function AdminPanel({ meId }: { meId: string }) {
           ))
         )}
       </div>
+
+          {/* maintenance mode */}
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white">Maintenance mode</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Stops every bot immediately and blocks new starts for everyone.
+                  Users see a maintenance message when they try to start a bot.
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                  maintenanceOn
+                    ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30"
+                    : "bg-slate-800 px-2.5 py-1 text-slate-400"
+                }`}
+              >
+                {maintenanceOn ? "ON" : "OFF"}
+              </span>
+            </div>
+            <button
+              onClick={toggleMaintenance}
+              disabled={maintBusy}
+              className={
+                maintenanceOn
+                  ? "mt-4 rounded-lg bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20 disabled:opacity-40"
+                  : "mt-4 rounded-lg border border-rose-500/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+              }
+            >
+              {maintBusy
+                ? "Working…"
+                : maintenanceOn
+                  ? "Turn off maintenance"
+                  : "Turn on maintenance"}
+            </button>
+          </div>
 
           {/* IP blacklist */}
           <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
