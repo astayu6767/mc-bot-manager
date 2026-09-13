@@ -84,6 +84,8 @@ function stripReasoning(raw: string): string {
 }
 
 // TokenHarbour — OpenAI-compatible chat completions endpoint. Primary
+// provider. Body mirrors the owner-verified curl EXACTLY (model +
+// messages only — no extra params; free models can 400 on them).
 // provider. Single attempt with a tight cap: if the free model is cold or
 // the key/model is misconfigured, the beam falls through to pollinations
 // fast instead of burning the whole turn budget.
@@ -91,7 +93,7 @@ async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<stri
   const key = tokenHarbourKey();
   if (!key) return null;
   const model = process.env.TOKENHARBOR_MODEL || DEFAULT_TOKENHARBOR_MODEL;
-  timeoutMs = Math.min(timeoutMs, 9000);
+  timeoutMs = Math.min(timeoutMs, 14000);
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -104,8 +106,6 @@ async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<stri
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        max_tokens: 120,
       }),
       signal: ctrl.signal,
     });
