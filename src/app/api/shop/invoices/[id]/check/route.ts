@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { invoices, shopPlans, licenseKeys } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { checkLtcPayment, generateLicenseKeyForShop } from "@/lib/shop";
 import { logDiscordEvent } from "@/lib/eventLog";
 
@@ -59,57 +59,82 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return Response.json({ paid: false, status: invoice.status, balance: check.balance });
   }
 
-  // Payment detected! Generate license key
-  const plan = invoice.planId ? (await db.select().from(shopPlans).where(eq(shopPlans.id, invoice.planId)))[0] : null;
-  const bots = plan?.bots || 2;
-  const hours = plan?.hours || 6;
-  // Duration: we map hours to days/hours? For shop, hours per day? But license duration is total validity.
-  // Let's give 30 days for all plans, plus hours? Or use hours as daily? Simpler: 30 days + 0 hours, but reason includes bots/hours.
-  // We'll give 30 days validity for all shop purchases.
+  // Payment detected — mint the license key ATOMICALLY.
+  //
+  // The invoice flip pending->paid is the claim/lock (UPDATE ... WHERE
+  // status='pending'): two parallel check calls (user double-clicking
+  // / browser + panel) previously BOTH passed the balance check and BOTH
+  // minted a key — two licenses for one payment. Now only the caller
+  // that flips the row creates a key; the loser re-reads the invoice and
+  // gets the existing key.
+  const minted = await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(invoices)
+      .set({ status: "paid", paidAt: new Date() })
+      .where(and(eq(invoices.id, id), eq(invoices.status, "pending")))
+      .returning();
+    if (!claimed) return null;
 
-  // Generate license key
-  let licenseKeyStr = "";
-  let attempts = 0;
-  let licenseKeyRecord;
-  do {
-    licenseKeyStr = generateLicenseKeyForShop();
-    attempts++;
-    if (attempts > 10) throw new Error("Failed to generate unique key");
-    const existing = await db.select().from(licenseKeys).where(eq(licenseKeys.key, licenseKeyStr));
-    if (existing.length === 0) break;
-  } while (true);
+    const plan = claimed.planId
+      ? (await tx.select().from(shopPlans).where(eq(shopPlans.id, claimed.planId)))[0]
+      : null;
+    const planBots = plan?.bots || 2;
+    const planHours = plan?.hours || 6;
 
-  // Determine duration: 30 days for starter, 30 for pro, 30 for enterprise (or use hours field as extra?)
-  const durationDays = 30;
-  const durationHours = 0;
+    // Generate a unique license key
+    let licenseKeyStr = "";
+    let attempts = 0;
+    let createdKey;
+    do {
+      licenseKeyStr = generateLicenseKeyForShop();
+      attempts++;
+      if (attempts > 10) throw new Error("Failed to generate unique key");
+      const existing = await tx.select().from(licenseKeys).where(eq(licenseKeys.key, licenseKeyStr));
+      if (existing.length === 0) break;
+    } while (true);
 
-  const [createdKey] = await db.insert(licenseKeys).values({
-    key: licenseKeyStr,
-    slots: bots,
-    durationDays,
-    durationHours,
-    reason: `${plan?.tier || "SHOP"} - $${invoice.amountUSD} - ${bots} bots ${hours}h/day - LTC ${invoice.amountLTC}`,
-    active: "true",
-    redeemed: "false",
-    createdBy: me.id,
-  }).returning();
+    // 30 days validity for all shop purchases.
+    const durationDays = 30;
+    const durationHours = 0;
 
-  // Update invoice
-  await db.update(invoices).set({
-    status: "paid",
-    paidAt: new Date(),
-    licenseKey: licenseKeyStr,
-    licenseKeyId: createdKey.id,
-  }).where(eq(invoices.id, id));
+    [createdKey] = await tx.insert(licenseKeys).values({
+      key: licenseKeyStr,
+      slots: planBots,
+      durationDays,
+      durationHours,
+      reason: `${plan?.tier || "SHOP"} - $${claimed.amountUSD} - ${planBots} bots ${planHours}h/day - LTC ${claimed.amountLTC}`,
+      active: "true",
+      redeemed: "false",
+      createdBy: me.id,
+    }).returning();
+
+    await tx.update(invoices).set({
+      licenseKey: licenseKeyStr,
+      licenseKeyId: createdKey.id,
+    }).where(eq(invoices.id, id));
+
+    return { key: licenseKeyStr, keyId: createdKey.id, bots: planBots, hours: planHours, tier: plan?.tier };
+  });
+
+  if (!minted) {
+    // Lost the race — the invoice is already paid; return its existing key.
+    const [fresh] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return Response.json({
+      paid: true,
+      status: fresh?.status ?? "paid",
+      licenseKey: fresh?.licenseKey ?? null,
+      balance: "paid",
+    });
+  }
 
   logDiscordEvent("purchase", {
     title: "Purchase paid",
     color: 0x10b981,
     fields: [
       { name: "Buyer", value: me.username, inline: true },
-      { name: "Plan", value: plan?.tier ?? "SHOP", inline: true },
+      { name: "Plan", value: minted.tier ?? "SHOP", inline: true },
       { name: "Amount", value: `$${invoice.amountUSD} (≈${invoice.amountLTC} LTC)`, inline: true },
-      { name: "License key", value: licenseKeyStr, inline: false },
+      { name: "License key", value: minted.key, inline: false },
     ],
   });
 
@@ -122,11 +147,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   return Response.json({
     paid: true,
     status: "paid",
-    licenseKey: licenseKeyStr,
-    licenseKeyId: createdKey.id,
+    licenseKey: minted.key,
+    licenseKeyId: minted.keyId,
     balance: check.balance,
-    bots,
-    hours,
-    tier: plan?.tier,
+    bots: minted.bots,
+    hours: minted.hours,
+    tier: minted.tier,
   });
 }

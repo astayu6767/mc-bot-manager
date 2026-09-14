@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { users, licenses, licenseKeys, bots } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import crypto from "crypto";
 
 export type LicenseInfo = {
@@ -271,54 +271,70 @@ export async function createLicenseKey(params: {
 
 /**
  * Redeem a license key - user enters key like abeam-key-xxx
+ *
+ * ATOMIC: the UPDATE (redeemed false -> true) is the claim/lock, run first
+ * inside a transaction. The previous select-then-insert-then-update flow
+ * had a double-spend race: N parallel redeems (website endpoint + Discord
+ * /redeem both funnel here) all read redeemed="false" and each inserted a
+ * full license — one key stacked N x slots. Now only the single caller
+ * that flips the row gets a license; losers get "already redeemed".
  */
 export async function redeemLicenseKey(userId: string, key: string): Promise<LicenseInfo> {
   const trimmedKey = key.trim();
   if (!trimmedKey) throw new Error("License key required");
 
-  const [lk] = await db.select().from(licenseKeys).where(eq(licenseKeys.key, trimmedKey));
-  if (!lk) {
-    throw new Error("Invalid license key");
-  }
+  const claimed = await db.transaction(async (tx) => {
+    // Atomic claim — the WHERE covers redeemed/active, so exactly one
+    // concurrent caller (if any) receives a row back.
+    const [lk] = await tx
+      .update(licenseKeys)
+      .set({
+        redeemed: "true",
+        redeemedBy: userId,
+        redeemedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(licenseKeys.key, trimmedKey),
+          eq(licenseKeys.active, "true"),
+          eq(licenseKeys.redeemed, "false"),
+        ),
+      )
+      .returning();
+    if (!lk) return null;
 
-  if (lk.active !== "true") {
-    throw new Error("License key is inactive");
-  }
+    // We own the key — create the license in the same transaction (a
+    // failure here rolls the claim back, so the key isn't burned).
+    const now = new Date();
+    const totalHours = lk.durationDays * 24 + lk.durationHours;
+    const expiresAt = new Date(now.getTime() + totalHours * 60 * 60 * 1000);
 
-  if (lk.redeemed === "true") {
+    const [license] = await tx
+      .insert(licenses)
+      .values({
+        userId,
+        slots: lk.slots,
+        durationDays: lk.durationDays,
+        durationHours: lk.durationHours,
+        expiresAt,
+        active: "true",
+        reason: lk.reason,
+        licenseKey: lk.key,
+        createdBy: lk.createdBy,
+      })
+      .returning();
+    return { lk, license };
+  });
+
+  if (!claimed) {
+    // Lost the race, inactive, or nonexistent — re-read for the exact reason.
+    const [lk] = await db.select().from(licenseKeys).where(eq(licenseKeys.key, trimmedKey));
+    if (!lk) throw new Error("Invalid license key");
+    if (lk.active !== "true") throw new Error("License key is inactive");
     throw new Error("License key already redeemed");
   }
 
-  // Create license for user
-  const now = new Date();
-  const totalHours = lk.durationDays * 24 + lk.durationHours;
-  const expiresAt = new Date(now.getTime() + totalHours * 60 * 60 * 1000);
-
-  const [license] = await db
-    .insert(licenses)
-    .values({
-      userId,
-      slots: lk.slots,
-      durationDays: lk.durationDays,
-      durationHours: lk.durationHours,
-      expiresAt,
-      active: "true",
-      reason: lk.reason,
-      licenseKey: lk.key,
-      createdBy: lk.createdBy,
-    })
-    .returning();
-
-  // Mark key as redeemed
-  await db
-    .update(licenseKeys)
-    .set({
-      redeemed: "true",
-      redeemedBy: userId,
-      redeemedAt: now,
-    })
-    .where(eq(licenseKeys.id, lk.id));
-
+  const { license } = claimed;
   return {
     id: license.id,
     slots: license.slots,
