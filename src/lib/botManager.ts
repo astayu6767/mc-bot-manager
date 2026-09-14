@@ -4,7 +4,7 @@ import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
 import { aiText, lastAiError } from "@/lib/ai";
-import { isMaintenanceOn } from "@/lib/maintenance";
+import { isAiModeEnabled, isMaintenanceOn } from "@/lib/maintenance";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -2979,6 +2979,11 @@ export async function startBeam(id: string): Promise<BotActionResult> {
 
   if (!record) return { ok: false, message: "Bot record not found" };
 
+  // AI mode kill switch — no new 1v1 AI beams while the site has it disabled.
+  if (record.beamType === "ai" && !(await isAiModeEnabled())) {
+    return { ok: false, message: "AI mode is temporarily disabled" };
+  }
+
   rt.beamLoop = true;
   rt.beaming = true;
   rt.beamStage = "starting";
@@ -3045,6 +3050,16 @@ export async function startBeam(id: string): Promise<BotActionResult> {
   })();
 
   return { ok: true, message: "Beam started" };
+}
+
+// If a beam loop is running for this bot, restart it so it picks up its
+// (already updated) DB config immediately — e.g. ai -> lobby switch.
+export async function restartBeamIfRunning(id: string): Promise<boolean> {
+  const rt = runtimes.get(id);
+  if (!rt || !rt.beamLoop || rt.status !== "online") return false;
+  await stopBeam(id);
+  const res = await startBeam(id);
+  return res.ok;
 }
 
 export async function stopBeam(id: string): Promise<BotActionResult> {

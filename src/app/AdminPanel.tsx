@@ -127,6 +127,9 @@ export default function AdminPanel({ meId }: { meId: string }) {
   // Maintenance mode
   const [maintenanceOn, setMaintenanceOn] = useState(false);
   const [maintBusy, setMaintBusy] = useState(false);
+  // AI mode (1v1 Player Method) toggle
+  const [aiModeOn, setAiModeOn] = useState(true);
+  const [aiModeBusy, setAiModeBusy] = useState(false);
   // Test AI panel
   type AiProviderInfo = { id: string; label: string; model: string };
   type AiTestResult = { busy?: boolean; ok?: boolean; reply?: string; error?: string; ms?: number };
@@ -266,6 +269,60 @@ export default function AdminPanel({ meId }: { meId: string }) {
     } catch {
       setAiTests((prev) => ({ ...prev, [id]: { ok: false, error: "Network error while testing" } }));
     }
+  }
+
+  const loadAiMode = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/ai-mode", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setAiModeOn(Boolean(data.enabled));
+      }
+    } catch {}
+  }, []);
+
+  async function applyAiMode(enabled: boolean) {
+    if (aiModeBusy) return;
+    setAiModeBusy(true);
+    try {
+      const res = await fetch("/api/admin/ai-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Could not toggle AI mode", "error");
+      } else {
+        setAiModeOn(Boolean(data.enabled));
+        toast(
+          data.enabled
+            ? "AI mode ON — 1v1 method available again"
+            : `AI mode OFF — ${data.switched} bot(s) switched to lobby`,
+          data.enabled ? "success" : "info",
+        );
+      }
+    } catch {
+      toast("Network error while toggling AI mode", "error");
+    } finally {
+      setAiModeBusy(false);
+    }
+  }
+
+  function toggleAiMode() {
+    if (aiModeOn) {
+      openConfirm({
+        title: "Disable AI mode",
+        body:
+          "Every bot using the 1v1 Player Method switches to lobby adbot mode immediately " +
+          "(running beams restart), and nobody can create new AI bots until you turn it back on.",
+        confirmLabel: "Switch all to lobby",
+        danger: true,
+        onConfirm: () => applyAiMode(false),
+      });
+      return;
+    }
+    void applyAiMode(true);
   }
 
   function toggleMaintenance() {
@@ -433,6 +490,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
     if (id === "users") {
       void loadIpBans();
       void loadMaintenance();
+      void loadAiMode();
     }
   }
 
@@ -1241,6 +1299,39 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 : maintenanceOn
                   ? "Turn off maintenance"
                   : "Turn on maintenance"}
+            </button>
+          </div>
+
+          {/* AI mode (1v1) */}
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white">AI mode (1v1 Player Method)</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Turns off the AI 1v1 recruiting method everywhere — running AI bots switch
+                  to lobby adbot mode and new AI bots can&apos;t be created until re-enabled.
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                  aiModeOn
+                    ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                    : "bg-slate-800 px-2.5 py-1 text-slate-400"
+                }`}
+              >
+                {aiModeOn ? "ON" : "OFF"}
+              </span>
+            </div>
+            <button
+              onClick={toggleAiMode}
+              disabled={aiModeBusy}
+              className={
+                aiModeOn
+                  ? "mt-4 rounded-lg border border-rose-500/25 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+                  : "mt-4 rounded-lg bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20 disabled:opacity-40"
+              }
+            >
+              {aiModeBusy ? "Working…" : aiModeOn ? "Turn off AI mode" : "Turn on AI mode"}
             </button>
           </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlusIcon, SwordsIcon, MegaphoneIcon } from "./Icons";
 
 // ---------------------------------------------------------------------------
@@ -124,6 +124,21 @@ export default function AddBotWizard({
   const [serverId, setServerId] = useState<string | null>(null);
   const [region, setRegion] = useState<string | null>(null);
   const [beamMode, setBeamMode] = useState<string | null>(null);
+  // AI mode can be disabled site-wide from the admin panel — grey it out.
+  const [aiDisabled, setAiDisabled] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/ai-mode")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (alive && d && d.enabled === false) setAiDisabled(true);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   // 1v1 method config
   const [opener, setOpener] = useState(DEFAULT_OPENER);
   const [discordUser, setDiscordUser] = useState("");
@@ -214,7 +229,7 @@ export default function AddBotWizard({
     if (step === 0) return profile !== null;
     if (step === 1) return serverId !== null;
     if (step === 2) return region !== null;
-    if (step === 3) return beamMode !== null;
+    if (step === 3) return beamMode !== null && !(beamMode === "ai" && aiDisabled);
     return true;
   }
 
@@ -389,15 +404,20 @@ export default function AddBotWizard({
               <div className="grid gap-2">
                 {BEAM_MODES.map((m) => {
                   const on = beamMode === m.id;
+                  const disabled = m.id === "ai" && aiDisabled;
                   return (
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => setBeamMode(m.id)}
-                      className={`rounded-xl border px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
-                        on
-                          ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
-                          : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
+                      onClick={() => !disabled && setBeamMode(m.id)}
+                      className={`rounded-xl border px-3.5 py-3 text-left transition-all duration-200 ${
+                        disabled
+                          ? "cursor-not-allowed border-slate-800 bg-slate-950/40 opacity-50"
+                          : `hover:-translate-y-0.5 ${
+                              on
+                                ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
+                                : "border-slate-700/80 bg-slate-950/60 hover:border-slate-500"
+                            }`
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -405,7 +425,12 @@ export default function AddBotWizard({
                         <span className="text-sm font-semibold text-slate-100">
                           {m.title}
                         </span>
-                        {on && (
+                        {disabled && (
+                          <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-rose-400">
+                            disabled
+                          </span>
+                        )}
+                        {on && !disabled && (
                           <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-emerald-400">
                             selected
                           </span>
@@ -414,6 +439,12 @@ export default function AddBotWizard({
                       <span className="mt-1 block pl-7 text-xs text-slate-400">
                         {m.blurb}
                       </span>
+                      {disabled && (
+                        <span className="mt-1 block pl-7 text-xs text-rose-300/80">
+                          Temporarily disabled by the site admin — use the adbot
+                          mode for now.
+                        </span>
+                      )}
                     </button>
                   );
                 })}

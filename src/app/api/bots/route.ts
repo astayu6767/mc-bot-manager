@@ -4,6 +4,7 @@ import { logDiscordEvent } from "@/lib/eventLog";
 import { bots } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRuntimeView, startBot, resumeEnabledBots } from "@/lib/botManager";
+import { isAiModeEnabled } from "@/lib/maintenance";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserLicenseStatus, canUserCreateBot } from "@/lib/license";
 
@@ -136,6 +137,12 @@ export async function POST(req: Request) {
       ? body.engine
       : "azalea";
   const beamType = (body.beamType === "spam" || body.beamType === "lobby") ? body.beamType : "ai";
+  if (beamType === "ai" && !(await isAiModeEnabled())) {
+    return Response.json(
+      { error: "AI mode is temporarily disabled — use the lobby adbot mode instead" },
+      { status: 403 },
+    );
+  }
   const spamMessage = (body.spamMessage ?? "").trim() || "type 123 in chat for tier test all mode";
   const spamInterval = Number.isFinite(Number(body.spamInterval)) ? Number(body.spamInterval) : 60000;
   const spamTriggerWord = (body.spamTriggerWord ?? "").trim() || "123";

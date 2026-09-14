@@ -4,6 +4,7 @@ import { logDiscordEvent } from "@/lib/eventLog";
 import { bots } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { stopBot, startBot } from "@/lib/botManager";
+import { isAiModeEnabled } from "@/lib/maintenance";
 import { authorizeBot } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -121,6 +122,12 @@ export async function PATCH(
     updates.engine = body.engine;
   }
   if (body.beamType === "ai" || body.beamType === "spam" || body.beamType === "lobby") {
+    if (body.beamType === "ai" && !(await isAiModeEnabled())) {
+      return Response.json(
+        { error: "AI mode is temporarily disabled — use the lobby adbot mode instead" },
+        { status: 403 },
+      );
+    }
     updates.beamType = body.beamType;
   }
   if (typeof body.spamMessage === "string") updates.spamMessage = body.spamMessage;
