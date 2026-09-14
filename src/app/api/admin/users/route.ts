@@ -33,6 +33,7 @@ export async function GET() {
       discordId: u.discordId,
       lastIp: u.lastIp,
       hasPassword: u.passwordHash !== "",
+      banned: u.banned === "true",
       createdAt: u.createdAt,
     };
   });

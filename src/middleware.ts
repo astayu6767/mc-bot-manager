@@ -1,6 +1,9 @@
+import crypto from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { getBannedIps } from "@/lib/ipBans";
+import { isUserBanned } from "@/lib/userBans";
 import { isPrivateIp } from "@/lib/ip";
+import { SESSION_SECRET } from "@/lib/config";
 
 // Edge of the app: every request passes through here.
 //  1. Banned IPs (admin blacklist) are refused everywhere.
@@ -119,7 +122,46 @@ function blockedJson(message: string): Response {
 
 // ---------------------------------------------------------------------------
 
+// Verify the session cookie WITHOUT importing auth.ts (which pulls db +
+// next/headers into the middleware bundle). Same HMAC scheme as
+// makeSessionToken/verifyToken in src/lib/auth.ts.
+const SESSION_COOKIE = "mcbm_session";
+
+function sessionUserId(req: NextRequest): string | null {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, ts, sig] = parts;
+  const expected = crypto
+    .createHmac("sha256", SESSION_SECRET)
+    .update(`${userId}.${ts}`)
+    .digest("hex");
+  if (
+    sig.length !== expected.length ||
+    !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+  ) {
+    return null;
+  }
+  return userId;
+}
+
 export async function middleware(req: NextRequest) {
+  // Site ban (owner decision, reversible): banned users get NOTHING —
+  // every API route 403s and every page shows only the ban message.
+  // Runs before the IP logic so it applies even without a forwarded IP.
+  const sessUser = sessionUserId(req);
+  if (sessUser && (await isUserBanned(sessUser))) {
+    if (req.nextUrl.pathname.startsWith("/api")) {
+      return blockedJson("You are banned by the owner.");
+    }
+    return blockedPage({
+      color: "#f43f5e",
+      title: "Banned",
+      body: "You are banned by the owner.",
+    });
+  }
+
   const fwd = req.headers.get("x-forwarded-for");
   const ip = fwd ? fwd.split(",")[0].trim() : req.headers.get("x-real-ip")?.trim() ?? "";
   if (!ip || isPrivateIp(ip)) return NextResponse.next();

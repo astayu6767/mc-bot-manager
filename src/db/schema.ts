@@ -14,6 +14,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull().default(""),
   // Last IP the account logged in from (for the admin IP blacklist)
   lastIp: text("last_ip"),
+  // Site ban by owner — user can't access ANYTHING (middleware blocks all
+  // routes) but nothing is deleted; unbanning restores everything.
+  banned: text("banned").notNull().default("false"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -30,6 +33,9 @@ export const licenses = pgTable("licenses", {
   expiresAt: timestamp("expires_at").notNull(),
   // Status
   active: text("active").notNull().default("true"),
+  // Held (suspended by admin while suspicious) — does not count toward
+  // slots while held; unholding restores it untouched.
+  held: text("held").notNull().default("false"),
   // Reason / note
   reason: text("reason").notNull().default(""),
   // Original redeemable key if this came from a key

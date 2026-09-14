@@ -21,6 +21,8 @@ type AdminUser = {
   lastIp: string | null;
   // true when the account was made with email + password (has a password hash)
   hasPassword: boolean;
+  // site-banned by the owner (middleware blocks everything for them)
+  banned: boolean;
   createdAt: string;
 };
 
@@ -77,6 +79,7 @@ type LicenseInfo = {
   durationHours: number;
   expiresAt: string;
   active: boolean;
+  held: boolean;
   reason: string;
   licenseKey?: string;
   createdAt: string;
@@ -753,6 +756,61 @@ export default function AdminPanel({ meId }: { meId: string }) {
     }
   }
 
+  async function unbanUser(u: AdminUser) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/users/${u.id}/ban`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banned: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Unban failed", "error");
+      } else {
+        toast(`${u.username} unbanned — everything restored`, "success");
+        await refresh();
+      }
+    } catch {
+      toast("Network error while unbanning", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function siteBanUser(u: AdminUser) {
+    openConfirm({
+      title: "Site ban",
+      body:
+        `"${u.username}" will see only "You are banned by the owner" — nothing loads, no API works. ` +
+        "Their bots stop but NOTHING is deleted: keys, licenses and bots all stay intact and come back when you unban.",
+      confirmLabel: "Ban from site",
+      danger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const res = await fetch(`/api/admin/users/${u.id}/ban`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ banned: true }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            toast(data.error || "Ban failed", "error");
+          } else {
+            toast(`${u.username} banned (${data.stopped} bot(s) stopped)`, "info");
+            await refresh();
+          }
+        } catch {
+          toast("Network error while banning", "error");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+
   function deleteUser(u: AdminUser) {
     openConfirm({
       title: "Delete account",
@@ -886,6 +944,29 @@ export default function AdminPanel({ meId }: { meId: string }) {
         }
       },
     });
+  }
+
+  async function holdToggleLicense(id: string, action: "hold" | "unhold") {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/licenses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, type: "license" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "Could not update the license", "error");
+      } else {
+        toast(action === "hold" ? "License held — slots suspended" : "License restored", action === "hold" ? "info" : "success");
+        await refreshLicenses();
+      }
+    } catch {
+      toast("Network error while updating the license", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function revokeLicenseKey(id: string, type: "key" | "license" = "key") {
@@ -1095,6 +1176,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
                           email+pass
                         </span>
                       )}
+                      {u.banned && (
+                        <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-xs font-semibold text-rose-300 ring-1 ring-rose-500/30">
+                          banned
+                        </span>
+                      )}
                       {u.id === meId && (
                         <span className="text-xs text-slate-500">(you)</span>
                       )}
@@ -1163,6 +1249,23 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       >
                         Blacklist
                       </button>
+                      {u.banned ? (
+                        <button
+                          disabled={busy}
+                          onClick={() => void unbanUser(u)}
+                          className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20 disabled:opacity-40"
+                        >
+                          Unban
+                        </button>
+                      ) : (
+                        <button
+                          disabled={busy}
+                          onClick={() => siteBanUser(u)}
+                          className="rounded-lg border border-rose-500/25 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
+                        >
+                          Site ban
+                        </button>
+                      )}
                       <button
                         disabled={busy}
                         onClick={() => deleteUser(u)}
@@ -1616,9 +1719,12 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   <div key={lic.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/40 p-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        <span className={`h-2 w-2 rounded-full ${lic.held ? "bg-amber-400" : "bg-emerald-400"}`} />
                         <span className="text-xs font-semibold text-slate-300">{lic.username}</span>
                         <span className="text-xs text-slate-500">· {lic.slots} slots · {lic.timeLeft}</span>
+                        {lic.held && (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">held</span>
+                        )}
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600">
                         <code className="rounded bg-slate-800 px-1 py-0.5 font-mono text-amber-300/60">{lic.licenseKey?.slice(0,22)}...</code>
@@ -1626,6 +1732,23 @@ export default function AdminPanel({ meId }: { meId: string }) {
                       </div>
                     </div>
                     <div className="flex gap-1">
+                      {lic.held ? (
+                        <button
+                          disabled={busy}
+                          onClick={() => void holdToggleLicense(lic.id, "unhold")}
+                          className="rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20 disabled:opacity-40"
+                        >
+                          Unhold
+                        </button>
+                      ) : (
+                        <button
+                          disabled={busy}
+                          onClick={() => void holdToggleLicense(lic.id, "hold")}
+                          className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-40"
+                        >
+                          Hold
+                        </button>
+                      )}
                       <button
                         disabled={busy}
                         onClick={() => revokeLicenseKey(lic.id, "license")}

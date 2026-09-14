@@ -10,6 +10,7 @@ export type LicenseInfo = {
   durationHours: number;
   expiresAt: Date;
   active: boolean;
+  held: boolean;
   reason: string;
   licenseKey?: string;
   createdAt: Date;
@@ -98,6 +99,7 @@ export async function getUserLicenseStatus(userId: string): Promise<UserLicenseS
     let nextExpiry: Date | null = null;
 
     for (const lic of userLicenses) {
+      const isHeld = lic.held === "true";
       const isExpired = lic.expiresAt <= now || lic.active !== "true";
       const info: LicenseInfo = {
         id: lic.id,
@@ -105,7 +107,8 @@ export async function getUserLicenseStatus(userId: string): Promise<UserLicenseS
         durationDays: lic.durationDays,
         durationHours: lic.durationHours,
         expiresAt: lic.expiresAt,
-        active: lic.active === "true" && !isExpired,
+        active: lic.active === "true" && !isExpired && !isHeld,
+        held: isHeld,
         reason: lic.reason,
         licenseKey: lic.licenseKey,
         createdAt: lic.createdAt,
@@ -113,7 +116,8 @@ export async function getUserLicenseStatus(userId: string): Promise<UserLicenseS
         timeLeft: formatTimeLeft(lic.expiresAt),
       };
 
-      if (isExpired) {
+      if (isExpired || isHeld) {
+        // Held subscriptions don't count toward slots while suspended.
         expiredLicenses.push(info);
       } else {
         activeLicenses.push(info);
@@ -205,6 +209,7 @@ export async function createLicense(params: {
     durationHours: license.durationHours,
     expiresAt: license.expiresAt,
     active: true,
+    held: false,
     reason: license.reason,
     licenseKey: license.licenseKey,
     createdAt: license.createdAt,
@@ -342,6 +347,7 @@ export async function redeemLicenseKey(userId: string, key: string): Promise<Lic
     durationHours: license.durationHours,
     expiresAt: license.expiresAt,
     active: true,
+    held: false,
     reason: license.reason,
     licenseKey: license.licenseKey,
     createdAt: license.createdAt,
@@ -388,6 +394,48 @@ export async function revokeLicense(licenseId: string): Promise<void> {
     .update(licenses)
     .set({ active: "false" })
     .where(eq(licenses.id, licenseId));
+}
+
+/**
+ * Hold a license (suspend while suspicious) — stops counting toward slots,
+ * fully reversible, nothing is modified or deleted.
+ */
+export async function holdLicense(licenseId: string): Promise<void> {
+  await db
+    .update(licenses)
+    .set({ held: "true" })
+    .where(eq(licenses.id, licenseId));
+}
+
+/**
+ * Unhold a license — it comes back exactly as it was (same expiry/slots).
+ */
+export async function unholdLicense(licenseId: string): Promise<void> {
+  await db
+    .update(licenses)
+    .set({ held: "false" })
+    .where(eq(licenses.id, licenseId));
+}
+
+/**
+ * Hold a (redeemable, unredeemed) license key — deactivates it so it can't
+ * be redeemed; reversible via unholdLicenseKey.
+ */
+export async function holdLicenseKey(keyId: string): Promise<void> {
+  await db
+    .update(licenseKeys)
+    .set({ active: "false" })
+    .where(eq(licenseKeys.id, keyId));
+}
+
+/**
+ * Unhold a license key — makes a held/revoked key redeemable again.
+ */
+export async function unholdLicenseKey(keyId: string): Promise<void> {
+  await db
+    .update(licenseKeys)
+    .set({ active: "true" })
+    .where(eq(licenseKeys.id, keyId));
 }
 
 /**
@@ -470,6 +518,7 @@ export async function getAllLicenses(): Promise<(LicenseInfo & { username: strin
       durationHours: license.durationHours,
       expiresAt: license.expiresAt,
       active: license.active === "true" && !isExpired,
+      held: license.held === "true",
       reason: license.reason,
       licenseKey: license.licenseKey,
       createdAt: license.createdAt,

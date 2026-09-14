@@ -1,5 +1,14 @@
 import { getCurrentUser } from "@/lib/auth";
-import { revokeLicense, deleteLicense, revokeLicenseKey, deleteLicenseKey } from "@/lib/license";
+import {
+  revokeLicense,
+  deleteLicense,
+  revokeLicenseKey,
+  deleteLicenseKey,
+  holdLicense,
+  unholdLicense,
+  holdLicenseKey,
+  unholdLicenseKey,
+} from "@/lib/license";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +60,22 @@ export async function PATCH(
         await revokeLicense(id);
       } else {
         await revokeLicenseKey(id);
+      }
+      return Response.json({ ok: true });
+    }
+    if (body.action === "hold") {
+      if (type === "license") {
+        await holdLicense(id);
+      } else {
+        await holdLicenseKey(id);
+      }
+      return Response.json({ ok: true });
+    }
+    if (body.action === "unhold") {
+      if (type === "license") {
+        await unholdLicense(id);
+      } else {
+        await unholdLicenseKey(id);
       }
       return Response.json({ ok: true });
     }

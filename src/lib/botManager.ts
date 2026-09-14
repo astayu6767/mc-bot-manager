@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
 import { aiText, lastAiError } from "@/lib/ai";
 import { isAiModeEnabled, isMaintenanceOn } from "@/lib/maintenance";
+import { isUserBanned } from "@/lib/userBans";
 
 const globalForResume = globalThis as typeof globalThis & {
   __mcBotsResumed?: boolean;
@@ -699,6 +700,16 @@ export async function startBot(record: Bot): Promise<void> {
     mrt.beamLoop = false;
     log(mrt, "system", "Start blocked — the site is in maintenance.");
     await setDbStatus(record.id, "offline", "Site is currently in maintenance");
+    return;
+  }
+  // Site-banned owner — nothing of theirs may run (their bots were stopped
+  // when they were banned; this covers bot rows re-enabled behind the ban).
+  if (record.userId && (await isUserBanned(record.userId))) {
+    const brt = getOrCreateRuntime(record.id);
+    brt.manualStop = true;
+    brt.beamLoop = false;
+    log(brt, "system", "Start blocked — this account is banned.");
+    await setDbStatus(record.id, "offline", "Account is banned");
     return;
   }
   const rt = getOrCreateRuntime(record.id);
