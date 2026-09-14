@@ -3,7 +3,7 @@
 // Providers (tried in order, env-configured; defaults baked in per owner):
 //   TOKENHARBOR_API_KEY     primary provider (default: baked-in live key)
 //   TOKENHARBOR_MODEL       default "deepseek-v4-flash:free"
-//   POLLINATIONS_API_KEYS   comma-separated keys (default: two baked-in keys)
+//   POLLINATIONS_API_KEYS   comma-separated keys (default: one baked-in key)
 //   POLLINATIONS_MODEL      default "deepseek-pro"
 //   OPENROUTER_API_KEY      last-resort provider
 //   AI_MODEL                openrouter model, default "nvidia/nemotron-3.5-lightning:free"
@@ -16,8 +16,7 @@ const POLLINATIONS_BASE = "https://gen.pollinations.ai/text";
 const DEFAULT_TOKENHARBOR_KEY = "thk_live_VUUcmiBvdk3XL_6OlpdSefgAsFixmRfJEGYNVztN1Ypsd8T6KAsSA67SC-SxWbDd";
 const DEFAULT_TOKENHARBOR_MODEL = "deepseek-v4-flash:free";
 const DEFAULT_POLLINATIONS_KEYS = [
-  "sk_qbR3YL6rZwribqxDVJPQgvaqUKAUoqhw",
-  "sk_rCHV415WKB5wPpxHe0fudPgBqe3noHa9",
+  "sk_vJX96vllkS0ErOcbmdSe2avyyxA9jSFE",
 ];
 const DEFAULT_OPENROUTER_KEY = "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";
 // "deepseek-pro" is live-verified fast/reliable on both keys; the earlier
