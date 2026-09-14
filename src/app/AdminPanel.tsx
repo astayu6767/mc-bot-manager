@@ -1985,7 +1985,9 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 )}
                 {r.ok === false && (
                   <div className="mt-4 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3">
-                    <div className="text-xs font-semibold text-rose-300">FAILED</div>
+                    <div className="text-xs font-semibold text-rose-300">
+                      FAILED after {((r.ms ?? 0) / 1000).toFixed(1)}s
+                    </div>
                     {r.error && (
                       <div className="mt-1.5 break-words text-xs text-rose-200">{r.error}</div>
                     )}

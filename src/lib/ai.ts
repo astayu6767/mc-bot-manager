@@ -93,7 +93,6 @@ async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<stri
   const key = tokenHarbourKey();
   if (!key) return null;
   const model = process.env.TOKENHARBOR_MODEL || DEFAULT_TOKENHARBOR_MODEL;
-  timeoutMs = Math.min(timeoutMs, 14000);
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -107,6 +106,7 @@ async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<stri
         model,
         messages: [{ role: "user", content: prompt }],
       }),
+      cache: "no-store",
       signal: ctrl.signal,
     });
     clearTimeout(timer);
@@ -126,7 +126,10 @@ async function tokenHarbourText(prompt: string, timeoutMs: number): Promise<stri
       console.warn(`[ai] ${lastThError}`);
     }
   } catch (err) {
-    lastThError = `tokenharbour: ${err instanceof Error ? err.message : String(err)}`.slice(0, 250);
+    const aborted = err instanceof Error && err.name === "AbortError";
+    lastThError = aborted
+      ? `tokenharbour: timed out after ${Math.round(timeoutMs / 1000)}s`
+      : `tokenharbour: ${err instanceof Error ? err.message : String(err)}`.slice(0, 250);
     console.warn(`[ai] ${lastThError}`);
   }
   return null;
@@ -241,7 +244,9 @@ export async function aiText(prompt: string, timeoutMs = 18000): Promise<AiResul
 
   for (const p of order) {
     if (p === "tokenharbour" && hasTh) {
-      const t = await tokenHarbourText(prompt, timeoutMs);
+      // beams must fall back fast — cap TH at 14s even when the caller
+      // passed a bigger budget (the admin test panel gets the full time)
+      const t = await tokenHarbourText(prompt, Math.min(timeoutMs, 14000));
       if (t) return { text: t, provider: "tokenharbour", ms: Date.now() - started };
     } else if (p === "pollinations" && hasPol) {
       const t = await pollinationsText(prompt, timeoutMs);
