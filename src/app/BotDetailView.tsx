@@ -25,7 +25,6 @@ export default function BotDetailView({
     lastProvider: string | null;
     pollinations: number;
     openrouter: number;
-    tokenharbour: number;
     failed: number;
     lastLatencyMs: number;
   } | null>(null);
@@ -229,14 +228,14 @@ export default function BotDetailView({
               >
                 <BellIcon size={13} /> {notifyOn ? "notify on" : "notify me"}
               </button>
-              {ai && ai.pollinations + ai.openrouter + ai.tokenharbour + ai.failed > 0 && (
+              {ai && ai.pollinations + ai.openrouter + ai.failed > 0 && (
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
                     ai.lastProvider
                       ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
                       : "bg-rose-500/15 text-rose-300 ring-rose-500/30"
                   }`}
-                  title={`tokenharbour: ${ai.tokenharbour} · pollinations: ${ai.pollinations} · openrouter: ${ai.openrouter} · failed: ${ai.failed}`}
+                  title={`pollinations: ${ai.pollinations} · openrouter: ${ai.openrouter} · failed: ${ai.failed}`}
                 >
                   AI:{" "}
                   {ai.lastProvider

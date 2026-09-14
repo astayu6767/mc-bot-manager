@@ -42,7 +42,6 @@ export async function POST(req: Request) {
   await setAiModeEnabled(body.enabled);
 
   let switched = 0;
-  let restarted = 0;
   if (!body.enabled) {
     const rows = await db
       .update(bots)
@@ -50,21 +49,29 @@ export async function POST(req: Request) {
       .where(eq(bots.beamType, "ai"))
       .returning();
     switched = rows.length;
-    for (const b of rows) {
-      try {
-        if (await restartBeamIfRunning(b.id)) restarted++;
-      } catch (err) {
-        console.warn(
-          `[ai-mode] beam restart failed for ${b.id}: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    }
     console.warn(
-      `[admin] ${me.username} disabled AI mode — ${switched} bot(s) switched to lobby, ${restarted} beam(s) restarted`,
+      `[admin] ${me.username} disabled AI mode — ${switched} bot(s) switched to lobby`,
     );
+    // Restarting waits for each old beam loop to fully exit (can take a
+    // while mid-chat) — run in the background so this request returns fast.
+    if (rows.length > 0) {
+      void (async () => {
+        let restarted = 0;
+        for (const b of rows) {
+          try {
+            if (await restartBeamIfRunning(b.id)) restarted++;
+          } catch (err) {
+            console.warn(
+              `[ai-mode] beam restart failed for ${b.id}: ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
+        console.log(`[ai-mode] ${restarted}/${rows.length} beam(s) restarted in lobby mode`);
+      })();
+    }
   } else {
     console.warn(`[admin] ${me.username} enabled AI mode`);
   }
 
-  return Response.json({ ok: true, enabled: body.enabled, switched, restarted });
+  return Response.json({ ok: true, enabled: body.enabled, switched });
 }

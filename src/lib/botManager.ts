@@ -1898,23 +1898,20 @@ export function getAiProviderStats(): {
   lastProvider: string | null;
   pollinations: number;
   openrouter: number;
-  tokenharbour: number;
   failed: number;
   lastLatencyMs: number;
 } {
   const last = aiProviderLog[aiProviderLog.length - 1] || null;
-  const tally = { pollinations: 0, openrouter: 0, tokenharbour: 0, failed: 0 };
+  const tally = { pollinations: 0, openrouter: 0, failed: 0 };
   for (const e of aiProviderLog.slice(-50)) {
     if (e.provider === "pollinations") tally.pollinations++;
     else if (e.provider === "openrouter") tally.openrouter++;
-    else if (e.provider === "tokenharbour") tally.tokenharbour++;
     else tally.failed++;
   }
   return {
     lastProvider: last ? last.provider : null,
     pollinations: tally.pollinations,
     openrouter: tally.openrouter,
-    tokenharbour: tally.tokenharbour,
     failed: tally.failed,
     lastLatencyMs: last ? last.ms : 0,
   };
@@ -3054,10 +3051,26 @@ export async function startBeam(id: string): Promise<BotActionResult> {
 
 // If a beam loop is running for this bot, restart it so it picks up its
 // (already updated) DB config immediately — e.g. ai -> lobby switch.
+// CRITICAL: stopBeam only REQUESTS a stop — the loop finishes its current
+// iteration first (can take a while). Starting a new beam before the old
+// loop actually exited resurrects it (while(beamLoop) sees true again) and
+// BOTH loops run, the old one with its stale config. So we wait for the
+// loop to fully exit before starting the replacement.
 export async function restartBeamIfRunning(id: string): Promise<boolean> {
   const rt = runtimes.get(id);
-  if (!rt || !rt.beamLoop || rt.status !== "online") return false;
+  if (!rt || !rt.beamLoop) return false;
+  if (rt.status !== "online") {
+    // Reconnecting — just kill the beam; the owner restarts it later.
+    await stopBeam(id);
+    return false;
+  }
   await stopBeam(id);
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    if (!rt.beamLoop && !rt.beaming) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (rt.beamLoop || rt.beaming) return false; // never exited — give up
   const res = await startBeam(id);
   return res.ok;
 }

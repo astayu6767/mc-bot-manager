@@ -4,7 +4,7 @@ import { aiTestInfo, aiTestProvider, type TestableProvider } from "@/lib/ai";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const VALID: TestableProvider[] = ["tokenharbour", "pollinations", "openrouter"];
+const VALID: TestableProvider[] = ["pollinations", "openrouter"];
 
 // Provider list (label + effective model) for the admin test panel.
 export async function GET() {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const provider = body.provider as TestableProvider;
   if (!VALID.includes(provider)) {
     return Response.json(
-      { error: "Provider must be tokenharbour, pollinations or openrouter" },
+      { error: "Provider must be pollinations or openrouter" },
       { status: 400 },
     );
   }
