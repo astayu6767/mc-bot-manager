@@ -253,3 +253,66 @@ export async function aiText(prompt: string, timeoutMs = 18000): Promise<AiResul
   }
   return { text: null, provider: null, ms: Date.now() - started };
 }
+
+// --- Admin "Test AI" panel: probe one provider directly ---
+
+export type TestableProvider = "tokenharbour" | "pollinations" | "openrouter";
+
+// What the admin panel shows per provider (effective model incl. env override).
+export function aiTestInfo(): { id: TestableProvider; label: string; model: string }[] {
+  return [
+    {
+      id: "tokenharbour",
+      label: "TokenHarbour",
+      model: process.env.TOKENHARBOR_MODEL || DEFAULT_TOKENHARBOR_MODEL,
+    },
+    {
+      id: "pollinations",
+      label: "Pollinations",
+      model: process.env.POLLINATIONS_MODEL || DEFAULT_POLLINATIONS_MODEL,
+    },
+    {
+      id: "openrouter",
+      label: "OpenRouter",
+      model: process.env.AI_MODEL || DEFAULT_OPENROUTER_MODEL,
+    },
+  ];
+}
+
+// Send a plain hello to EXACTLY one provider — no fallback chain — so the
+// panel proves which provider is live and surfaces the raw failure reason.
+export async function aiTestProvider(
+  provider: TestableProvider,
+  timeoutMs = 30000,
+): Promise<{ text: string | null; ms: number; error: string | null }> {
+  const prompt = "Say hello in one sentence.";
+  const started = Date.now();
+  if (provider === "tokenharbour") {
+    lastThError = "";
+    const text = await tokenHarbourText(prompt, timeoutMs);
+    return {
+      text,
+      ms: Date.now() - started,
+      error: text ? null : lastThError || "tokenharbour: no reply",
+    };
+  }
+  if (provider === "pollinations") {
+    lastPolError = "";
+    const text = await pollinationsText(prompt, timeoutMs);
+    return {
+      text,
+      ms: Date.now() - started,
+      error: text ? null : lastPolError || "pollinations: no reply",
+    };
+  }
+  if (provider === "openrouter") {
+    lastOrError = "";
+    const text = await openRouterText(prompt, timeoutMs);
+    return {
+      text,
+      ms: Date.now() - started,
+      error: text ? null : lastOrError || "openrouter: no reply",
+    };
+  }
+  return { text: null, ms: 0, error: "unknown provider" };
+}

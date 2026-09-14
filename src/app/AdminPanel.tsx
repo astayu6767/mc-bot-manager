@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
 import { EditBotModal } from "./BotDashboard";
-import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon } from "./Icons";
+import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon, BrainIcon } from "./Icons";
 import { toast } from "./toast";
 import { SkeletonTable } from "./Skeleton";
 import { BotItem } from "./types";
@@ -86,7 +86,7 @@ type LicenseInfo = {
 
 export default function AdminPanel({ meId }: { meId: string }) {
   // Sub-sidebar sections — the admin area is too big for one scrolling page.
-  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "shop" | "adminbot";
+  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "testai" | "shop" | "adminbot";
   const [section, setSection] = useState<AdminSection>("overview");
   // Session ID panel
   type SessionRow = {
@@ -127,6 +127,11 @@ export default function AdminPanel({ meId }: { meId: string }) {
   // Maintenance mode
   const [maintenanceOn, setMaintenanceOn] = useState(false);
   const [maintBusy, setMaintBusy] = useState(false);
+  // Test AI panel
+  type AiProviderInfo = { id: string; label: string; model: string };
+  type AiTestResult = { busy?: boolean; ok?: boolean; reply?: string; error?: string; ms?: number };
+  const [aiProviders, setAiProviders] = useState<AiProviderInfo[]>([]);
+  const [aiTests, setAiTests] = useState<Record<string, AiTestResult>>({});
 
   function openConfirm(c: ConfirmState) {
     setConfirmState(c);
@@ -227,6 +232,39 @@ export default function AdminPanel({ meId }: { meId: string }) {
       toast("Network error while toggling maintenance", "error");
     } finally {
       setMaintBusy(false);
+    }
+  }
+
+  const loadAiProviders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/ai-test", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setAiProviders(data.providers || []);
+      }
+    } catch {}
+  }, []);
+
+  async function runAiTest(id: string) {
+    if (aiTests[id]?.busy) return;
+    setAiTests((prev) => ({ ...prev, [id]: { busy: true } }));
+    try {
+      const res = await fetch("/api/admin/ai-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiTests((prev) => ({ ...prev, [id]: { ok: false, error: data.error || "Test failed" } }));
+      } else {
+        setAiTests((prev) => ({
+          ...prev,
+          [id]: { ok: Boolean(data.ok), reply: data.reply, error: data.error, ms: data.ms },
+        }));
+      }
+    } catch {
+      setAiTests((prev) => ({ ...prev, [id]: { ok: false, error: "Network error while testing" } }));
     }
   }
 
@@ -391,6 +429,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
   function openSection(id: AdminSection) {
     setSection(id);
     if (id === "sessions" && !sessionsLoaded) loadSessions();
+    if (id === "testai" && aiProviders.length === 0) void loadAiProviders();
     if (id === "users") {
       void loadIpBans();
       void loadMaintenance();
@@ -862,6 +901,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
               { id: "users", label: "Users", icon: <UsersIcon /> },
               { id: "licenses", label: "Licenses", icon: <TicketStarIcon /> },
               { id: "sessions", label: "Session IDs", icon: <KeyIcon /> },
+              { id: "testai", label: "Test AI", icon: <BrainIcon /> },
               { id: "shop", label: "Shop Management", icon: <CartIcon /> },
               { id: "adminbot", label: "Admin Bot", icon: <BotFaceIcon /> },
             ] as { id: AdminSection; label: string; icon: React.ReactNode }[]).map((item) => (
@@ -1881,6 +1921,81 @@ export default function AdminPanel({ meId }: { meId: string }) {
           )}
         </div>
       </div>
+
+      {section === "testai" && (
+        <div className="animate-fade-in space-y-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-lg shadow-emerald-900/40">
+                <BrainIcon />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Test AI</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Sends a plain hello to ONE provider — no fallback — so the result proves
+                  exactly which one is live. Beam order: TokenHarbour, then Pollinations, then OpenRouter.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {(aiProviders.length > 0
+            ? aiProviders
+            : [
+                { id: "tokenharbour", label: "TokenHarbour", model: "deepseek-v4-flash:free" },
+                { id: "pollinations", label: "Pollinations", model: "deepseek-pro" },
+                { id: "openrouter", label: "OpenRouter", model: "nvidia/nemotron-3.5-lightning:free" },
+              ]
+          ).map((p, i) => {
+            const r = aiTests[p.id] || {};
+            return (
+              <div key={p.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white">{p.label}</h4>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        i === 0
+                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                          : "bg-slate-700/40 text-slate-400 ring-1 ring-slate-600/40"
+                      }`}>
+                        {i === 0 ? "primary" : `fallback ${i}`}
+                      </span>
+                    </div>
+                    <code className="mt-1 block truncate text-xs text-slate-500">{p.model}</code>
+                  </div>
+                  <button
+                    onClick={() => void runAiTest(p.id)}
+                    disabled={r.busy}
+                    className="rounded-lg bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25 hover:bg-emerald-500/20 disabled:opacity-40"
+                  >
+                    {r.busy ? "Testing…" : "Test"}
+                  </button>
+                </div>
+
+                {r.ok === true && (
+                  <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+                    <div className="text-xs font-semibold text-emerald-300">
+                      LIVE — replied in {((r.ms ?? 0) / 1000).toFixed(1)}s
+                    </div>
+                    {r.reply && (
+                      <div className="mt-1.5 text-sm text-emerald-100">&ldquo;{r.reply}&rdquo;</div>
+                    )}
+                  </div>
+                )}
+                {r.ok === false && (
+                  <div className="mt-4 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3">
+                    <div className="text-xs font-semibold text-rose-300">FAILED</div>
+                    {r.error && (
+                      <div className="mt-1.5 break-words text-xs text-rose-200">{r.error}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {section === "adminbot" && (
         <div className="animate-fade-in">
