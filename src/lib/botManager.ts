@@ -2058,6 +2058,45 @@ function getOpenerLines(record: Bot): string[] {
   return DEFAULT_OPENER_VARIANTS[Math.floor(Math.random() * DEFAULT_OPENER_VARIANTS.length)];
 }
 
+// Lobby/ad message variation — servers ghost-mute accounts that repeat the
+// same line (exact AND fuzzy matches). Every send gets a unique combo of
+// prefix, casing, inner spacing and suffix; the words themselves (and the
+// trigger word) always stay intact. A ring buffer of recent sends +
+// re-roll guarantees no near-term repeats.
+const recentAdMessages: string[] = [];
+function varyAdMessage(base: string): string {
+  if (!base) return "";
+  const prefixes = ["", "yo ", "hey ", "alr ", "guys ", "btw ", "bro ", "honestly ", "lowkey ", "looking for "];
+  const suffixes = ["", "!", "!!", " lets go", " come on", " pls", " rq", " fr", " ty", "?"];
+  const build = (): string => {
+    const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const sfx = suffixes[Math.floor(Math.random() * suffixes.length)];
+    let body = base.trim();
+    // occasional casing tweak on the first word
+    if (Math.random() < 0.35) {
+      body = body.charAt(0).toUpperCase() + body.slice(1);
+    }
+    // occasional extra space between words (breaks fuzzy matchers that
+    // normalize punctuation but not whitespace)
+    if (Math.random() < 0.4) {
+      const words = body.split(" ");
+      if (words.length >= 2) {
+        const i = 1 + Math.floor(Math.random() * (words.length - 1));
+        words.splice(i, 0, "");
+        body = words.join(" ");
+      }
+    }
+    return `${p}${body}${sfx}`.trim();
+  };
+  let out = build();
+  for (let tries = 0; tries < 10 && recentAdMessages.includes(out); tries++) {
+    out = build();
+  }
+  recentAdMessages.push(out);
+  if (recentAdMessages.length > 120) recentAdMessages.shift();
+  return out;
+}
+
 // Run ONE recruit attempt against the nearest player. Returns an outcome.
 async function runBeamOnce(
   rt: BotRuntime,
@@ -2165,7 +2204,7 @@ async function runBeamOnce(
     try {
       while (rt.beamLoop) {
         if (!rt.bot || rt.status !== "online") break; // outer loop waits for reconnect
-        sendBotChat(rt, varyReply(lobbyMsg)); // varied so the repeat never gets muted
+        sendBotChat(rt, varyAdMessage(lobbyMsg)); // unique every send — no ghost mutes
         const start = Date.now();
         while (Date.now() - start < interval && rt.beamLoop) {
           await sleep(1000);
@@ -2183,7 +2222,7 @@ async function runBeamOnce(
     rt.beamStage = "spamming";
     const msg = record.spamMessage;
     try {
-      sendBotChat(rt, msg);
+      sendBotChat(rt, varyAdMessage(msg)); // unique every send — no ghost mutes
       
       // Also save to training DB as a "spam" log
       try {
@@ -2256,8 +2295,9 @@ async function runBeamOnce(
     return "positive"; // Loop again
   }
 
-  // 1) Auto-queue for MCPVP or use hotbar right-click
-  if (record.host.toLowerCase().includes("mcpvp")) {
+  // 1) Auto-queue per server, or hotbar right-click for the rest
+  const hostLower = record.host.toLowerCase();
+  if (hostLower.includes("mcpvp")) {
     const queues = ["/queue sword", "/queue mace", "/queue axe"];
     const q = queues[Math.floor(Math.random() * queues.length)];
     rt.beamStage = "auto queue (MCPVP)";
@@ -2265,6 +2305,16 @@ async function runBeamOnce(
       bot.chat(q);
       log(rt, "chat", `<you → server> ${q}`);
       log(rt, "system", `🔆 Beam: Sent ${q} to auto-join match.`);
+    } catch {}
+    await sleep(1500);
+  } else if (hostLower.includes("catpvp")) {
+    // CatPvP 1v1: queue the beast kit FIRST, then wait — the match-start
+    // waiter below takes over (match started / vs / opponent chat lines).
+    rt.beamStage = "auto queue (CatPvP)";
+    try {
+      bot.chat("/queue beast");
+      log(rt, "chat", "<you → server> /queue beast");
+      log(rt, "system", "🔆 Beam: Sent /queue beast — waiting for the match.");
     } catch {}
     await sleep(1500);
   } else {
