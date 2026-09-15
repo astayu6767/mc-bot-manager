@@ -54,6 +54,8 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
   const [myInvoices, setMyInvoices] = useState<Invoice[]>([]);
   const [resuming, setResuming] = useState<string | null>(null);
   const [qrFailed, setQrFailed] = useState(false);
+  const [trialBusy, setTrialBusy] = useState(false);
+  const [trialDone, setTrialDone] = useState<null | "claimed" | "used">(null);
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -159,6 +161,29 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       
     } finally {
       setBuying(null);
+    }
+  }
+
+  async function claimTrial() {
+    if (trialBusy) return;
+    setTrialBusy(true);
+    try {
+      const res = await fetch("/api/shop/trial", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setTrialDone("used");
+        } else {
+          toast(data.error || "Could not claim the trial", "error");
+        }
+      } else {
+        setTrialDone("claimed");
+        toast("Trial active — 1 bot for 24 hours", "success");
+      }
+    } catch {
+      toast("Network error while claiming the trial", "error");
+    } finally {
+      setTrialBusy(false);
     }
   }
 
@@ -303,7 +328,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
       {/* header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-[0_6px_18px_rgba(99,102,241,0.3)] ring-1 ring-white/10">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-[0_6px_18px_rgba(37,99,235,0.3)] ring-1 ring-white/10">
             <ShopBagIcon />
           </div>
           <div>
@@ -343,7 +368,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
                 ][planIdx % 3]
               } ${
                 plan.popular
-                  ? "border-violet-500/40 bg-gradient-to-b from-violet-500/20 to-indigo-500/10 shadow-[0_0_28px_rgba(99,102,241,0.18)]"
+                  ? "border-violet-500/40 bg-gradient-to-b from-violet-500/20 to-indigo-500/10 shadow-[0_0_28px_rgba(37,99,235,0.18)]"
                   : "border-slate-800 bg-slate-800/20 hover:border-slate-600"
               }`}
             >
@@ -400,7 +425,7 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
                     disabled={!!buying}
                     className={`group/buy relative w-full overflow-hidden rounded-2xl py-3 text-xs font-bold tracking-wide transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 ${
                       plan.popular
-                        ? "bg-gradient-to-r from-indigo-500 via-indigo-500 to-blue-600 text-white shadow-[0_6px_20px_rgba(99,102,241,0.35)] hover:shadow-[0_10px_28px_rgba(99,102,241,0.45)] hover:brightness-110"
+                        ? "bg-gradient-to-r from-indigo-500 via-indigo-500 to-blue-600 text-white shadow-[0_6px_20px_rgba(37,99,235,0.35)] hover:shadow-[0_10px_28px_rgba(37,99,235,0.45)] hover:brightness-110"
                         : "btn-primary border border-emerald-500/25 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/50 hover:bg-emerald-500/15"
                     }`}
                   >
@@ -421,6 +446,41 @@ export default function ShopPanel({ onGoLicense }: { onGoLicense?: () => void })
             </div>
           );
         })}
+      </div>
+
+      {/* free trial */}
+      <div className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-700 bg-slate-800/80 text-slate-200">
+              <LockIcon size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Free trial</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
+                1 bot · 24 hours · no payment needed — one trial per account,
+                activates instantly.
+              </p>
+            </div>
+          </div>
+          {trialDone === "claimed" ? (
+            <span className="rounded-xl bg-emerald-500/10 px-4 py-2.5 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-500/25">
+              Trial active — go create your bot
+            </span>
+          ) : trialDone === "used" ? (
+            <span className="rounded-xl bg-slate-800 px-4 py-2.5 text-xs font-medium text-slate-400 ring-1 ring-slate-700">
+              You already used your free trial
+            </span>
+          ) : (
+            <button
+              onClick={() => void claimTrial()}
+              disabled={trialBusy}
+              className="rounded-xl bg-slate-100 px-5 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-white disabled:opacity-50"
+            >
+              {trialBusy ? "Activating…" : "Claim free trial"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* invoice history */}

@@ -129,7 +129,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   logDiscordEvent("purchase", {
     title: "Purchase paid",
-    color: 0x10b981,
+    color: 0x0ea5e9,
     fields: [
       { name: "Buyer", value: me.username, inline: true },
       { name: "Plan", value: minted.tier ?? "SHOP", inline: true },

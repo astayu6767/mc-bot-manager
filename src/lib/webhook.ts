@@ -26,7 +26,7 @@ export function notifyDiscord(embed: WebhookEmbed): void {
             {
               title: embed.title,
               description: embed.description,
-              color: embed.color ?? 0x10b981, // emerald
+              color: embed.color ?? 0x0ea5e9, // emerald
               fields: embed.fields,
               footer: { text: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC" },
             },

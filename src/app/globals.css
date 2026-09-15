@@ -1,10 +1,57 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Professional palette — one blue accent family, slate neutrals.
+   Tailwind v4 design-token remap: the legacy emerald/violet/fuchsia classes
+   (370+ usages, from the old neon theme) resolve to sky/blue instead, so the
+   whole app shifts without touching component markup. Amber/orange (warning,
+   license keys), rose/red (danger) and slate stay semantic.
+--------------------------------------------------------------------------- */
+@theme {
+  /* emerald -> sky */
+  --color-emerald-200: #bae6fd;
+  --color-emerald-300: #7dd3fc;
+  --color-emerald-400: #38bdf8;
+  --color-emerald-500: #0ea5e9;
+  --color-emerald-600: #0284c7;
+  --color-emerald-900: #0c4a6e;
+  --color-emerald-950: #082f49;
+  /* teal -> sky */
+  --color-teal-400: #38bdf8;
+  --color-teal-500: #0ea5e9;
+  --color-teal-600: #0284c7;
+  --color-teal-700: #0369a1;
+  /* cyan -> sky */
+  --color-cyan-300: #7dd3fc;
+  --color-cyan-500: #0ea5e9;
+  /* violet -> blue */
+  --color-violet-300: #93c5fd;
+  --color-violet-400: #60a5fa;
+  --color-violet-500: #3b82f6;
+  --color-violet-600: #2563eb;
+  --color-violet-900: #1e3a8a;
+  --color-violet-950: #172554;
+  /* indigo -> blue */
+  --color-indigo-300: #93c5fd;
+  --color-indigo-500: #3b82f6;
+  --color-indigo-600: #2563eb;
+  --color-indigo-900: #1e3a8a;
+  /* fuchsia -> blue */
+  --color-fuchsia-300: #93c5fd;
+  --color-fuchsia-400: #60a5fa;
+  --color-fuchsia-500: #3b82f6;
+  --color-fuchsia-600: #2563eb;
+  --color-fuchsia-950: #172554;
+  /* purple -> blue */
+  --color-purple-700: #1d4ed8;
+  --color-purple-900: #1e3a8a;
+}
+
 :root {
   --bg: #070b14;
   --panel: rgba(17, 24, 39, 0.6);
   --border: rgba(148, 163, 184, 0.12);
-  --accent: #34d399;
+  --accent: #0ea5e9;
 }
 
 * {
@@ -25,26 +72,21 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-color: #030712;
+  background-color: #0a101d;
   background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
     radial-gradient(
-      80rem 80rem at 15% -10%,
-      rgba(16, 185, 129, 0.07),
+      90rem 60rem at 20% -20%,
+      rgba(37, 99, 235, 0.07),
       transparent 60%
     ),
     radial-gradient(
-      70rem 70rem at 100% 0%,
-      rgba(99, 102, 241, 0.07),
+      70rem 50rem at 110% 10%,
+      rgba(14, 165, 233, 0.05),
       transparent 55%
-    ),
-    radial-gradient(
-      60rem 60rem at 50% 120%,
-      rgba(139, 92, 246, 0.05),
-      transparent 60%
     );
-  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%, 100% 100%;
+  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
   pointer-events: none;
 }
 
@@ -68,7 +110,7 @@ body {
 }
 
 ::selection {
-  background: rgba(52, 211, 153, 0.3);
+  background: rgba(56, 189, 248, 0.3);
   color: #fff;
 }
 
@@ -85,12 +127,12 @@ body {
 }
 
 .premium-modal {
-  background: linear-gradient(145deg, #09090b 0%, #030712 100%);
+  background: linear-gradient(145deg, #0d1526 0%, #0a101d 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 
     0 0 0 1px rgba(255, 255, 255, 0.02),
     0 30px 60px -10px rgba(0, 0, 0, 0.8),
-    0 0 80px -20px rgba(16, 185, 129, 0.15);
+    0 0 80px -20px rgba(14, 165, 233, 0.13);
 }
 
 .card-hover {
@@ -101,10 +143,10 @@ body {
 }
 .card-hover:hover {
   transform: translateY(-2px);
-  border-color: rgba(52, 211, 153, 0.25);
+  border-color: rgba(56, 189, 248, 0.22);
   box-shadow: 
     0 12px 32px -16px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(52, 211, 153, 0.08) inset;
+    0 0 0 1px rgba(56, 189, 248, 0.07) inset;
 }
 
 /* Fluidity: interactive elements ease color/shadow gently (150–200ms). */
@@ -122,7 +164,7 @@ textarea {
 .btn-primary:hover:not(:disabled) {
   transform: scale(1.02);
   box-shadow:
-    0 0 24px -4px rgba(52, 211, 153, 0.45),
+    0 0 24px -6px rgba(14, 165, 233, 0.4),
     0 10px 30px -12px rgba(0, 0, 0, 0.55);
 }
 .btn-primary:active:not(:disabled) {
@@ -181,7 +223,7 @@ textarea {
 
 /* Keyboard accessibility: every interactive element gets a visible ring. */
 :focus-visible {
-  outline: 2px solid rgba(52, 211, 153, 0.55);
+  outline: 2px solid rgba(56, 189, 248, 0.55);
   outline-offset: 2px;
   border-radius: 6px;
 }

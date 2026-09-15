@@ -202,7 +202,7 @@ export async function sendToLogChannels(
   const name = LOG_CHANNEL_NAMES[kind];
   const embed = new EmbedBuilder()
     .setTitle(event.title)
-    .setColor(event.color ?? 0x10b981)
+    .setColor(event.color ?? 0x0ea5e9)
     .setFooter({ text: "MC Bot Manager" })
     .setTimestamp(new Date());
   if (event.description) embed.setDescription(event.description);

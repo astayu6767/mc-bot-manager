@@ -3,12 +3,12 @@ import { EmbedBuilder } from "discord.js";
 // Brand palette — mirrors the dashboard: emerald accent, deep slate surfaces,
 // indigo for informational, amber for warnings, rose for destructive.
 export const BRAND = {
-  emerald: 0x10b981,
+  emerald: 0x0ea5e9,
   slate: 0x0f172a,
-  indigo: 0x6366f1,
+  indigo: 0x2563eb,
   amber: 0xf59e0b,
   rose: 0xf43f5e,
-  violet: 0x8b5cf6,
+  violet: 0x2563eb,
   blurple: 0x5865f2,
 };
 

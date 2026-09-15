@@ -107,7 +107,7 @@ export default function LicensePanel() {
       <div className="flex items-start gap-4">
         <div className="relative">
           <div className="absolute inset-0 rounded-[16px] bg-gradient-to-br from-emerald-300 to-emerald-500 blur-[14px] opacity-50" />
-          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 shadow-[0_8px_24px_rgba(16,185,129,0.28)] ring-1 ring-white/15">
+          <div className="relative grid h-[48px] w-[48px] place-items-center rounded-[16px] bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 shadow-[0_8px_24px_rgba(14,165,233,0.28)] ring-1 ring-white/15">
             <TicketThumbIcon />
             <div className="absolute inset-0 rounded-[16px] bg-gradient-to-tr from-white/25 to-transparent" />
           </div>
@@ -120,7 +120,7 @@ export default function LicensePanel() {
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-[11px] text-slate-400 backdrop-blur">
-          <span className={`h-2 w-2 rounded-full ${hasLicense ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)] animate-pulse" : "bg-slate-600"}`} />
+          <span className={`h-2 w-2 rounded-full ${hasLicense ? "bg-emerald-400 shadow-[0_0_8px_rgba(56,189,248,0.5)] animate-pulse" : "bg-slate-600"}`} />
           {hasLicense ? `${status.totalSlots} slots active` : "No license"}
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function LicensePanel() {
             <button
               onClick={redeem}
               disabled={redeeming}
-              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 px-7 py-3.5 text-[13px] font-bold text-emerald-950 shadow-[0_8px_24px_rgba(16,185,129,0.25)] transition-all hover:from-emerald-300 hover:to-emerald-400 hover:shadow-[0_12px_32px_rgba(16,185,129,0.35)] active:scale-[0.98] disabled:opacity-50"
+              className="group/btn relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 px-7 py-3.5 text-[13px] font-bold text-emerald-950 shadow-[0_8px_24px_rgba(14,165,233,0.25)] transition-all hover:from-emerald-300 hover:to-emerald-400 hover:shadow-[0_12px_32px_rgba(14,165,233,0.35)] active:scale-[0.98] disabled:opacity-50"
             >
               <span className="relative z-10 flex items-center gap-1.5">
                 {redeeming ? "Redeeming…" : "Redeem"}
@@ -219,7 +219,7 @@ export default function LicensePanel() {
           <div className="relative overflow-hidden rounded-[16px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-teal-500/5 p-[1px]">
             <div className="rounded-[15px] bg-slate-900/70 p-4 backdrop-blur">
               <div className="flex items-center gap-2.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)] animate-pulse" />
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(56,189,248,0.6)] animate-pulse" />
                 <span className="text-[13px] font-semibold tracking-wide text-emerald-200">Active License</span>
                 <span className="ml-auto rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-300 ring-1 ring-emerald-500/20">
                   {status.availableSlots} free
@@ -262,7 +262,7 @@ function LicenseCard({ lic, expired }: { lic: LicenseInfo; expired?: boolean }) 
       <div className={`rounded-[13px] p-3.5 ${expired ? "bg-slate-900/40" : "bg-slate-900/60 backdrop-blur"}`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <span className={`h-2 w-2 rounded-full ${expired ? "bg-slate-500" : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"}`} />
+            <span className={`h-2 w-2 rounded-full ${expired ? "bg-slate-500" : "bg-emerald-400 shadow-[0_0_8px_rgba(56,189,248,0.5)]"}`} />
             <span className="text-[12px] font-semibold text-slate-200">{lic.slots} slots</span>
             <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-700/40">
               {lic.durationDays}d {lic.durationHours}h

@@ -7,7 +7,7 @@ import { onToast, Toast, ToastKind } from "./toast";
 
 const STYLES: Record<ToastKind, string> = {
   success:
-    "border-emerald-500/30 bg-emerald-500/10 text-emerald-200 shadow-[0_8px_30px_rgba(16,185,129,0.15)]",
+    "border-emerald-500/30 bg-emerald-500/10 text-emerald-200 shadow-[0_8px_30px_rgba(14,165,233,0.15)]",
   error:
     "border-rose-500/30 bg-rose-500/10 text-rose-200 shadow-[0_8px_30px_rgba(244,63,94,0.15)]",
   info: "border-slate-600/40 bg-slate-800/90 text-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.35)]",

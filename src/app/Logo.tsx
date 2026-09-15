@@ -17,12 +17,12 @@ export function Logo({
     >
       <defs>
         <linearGradient id="logoBg" x1="0" y1="0" x2="48" y2="48">
-          <stop offset="0" stopColor="#34d399" />
-          <stop offset="1" stopColor="#0f766e" />
+          <stop offset="0" stopColor="#38bdf8" />
+          <stop offset="1" stopColor="#1d4ed8" />
         </linearGradient>
         <linearGradient id="logoFace" x1="10" y1="12" x2="38" y2="38">
-          <stop offset="0" stopColor="#ecfdf5" />
-          <stop offset="1" stopColor="#a7f3d0" />
+          <stop offset="0" stopColor="#f0f9ff" />
+          <stop offset="1" stopColor="#bae6fd" />
         </linearGradient>
       </defs>
       {/* rounded square base */}
@@ -35,8 +35,8 @@ export function Logo({
         opacity="0.4"
       />
       {/* antenna */}
-      <circle cx="24" cy="9" r="2.4" fill="#ecfdf5" />
-      <rect x="23" y="10.5" width="2" height="4" rx="1" fill="#ecfdf5" />
+      <circle cx="24" cy="9" r="2.4" fill="#f0f9ff" />
+      <rect x="23" y="10.5" width="2" height="4" rx="1" fill="#f0f9ff" />
       {/* robot head */}
       <rect
         x="11"
@@ -55,8 +55,8 @@ export function Logo({
       {/* mouth / status bar */}
       <rect x="18" y="30.5" width="12" height="2" rx="1" fill="#0f766e" opacity="0.55" />
       {/* side ears */}
-      <rect x="8.5" y="22" width="3" height="6" rx="1.5" fill="#ecfdf5" />
-      <rect x="36.5" y="22" width="3" height="6" rx="1.5" fill="#ecfdf5" />
+      <rect x="8.5" y="22" width="3" height="6" rx="1.5" fill="#f0f9ff" />
+      <rect x="36.5" y="22" width="3" height="6" rx="1.5" fill="#f0f9ff" />
     </svg>
   );
 }

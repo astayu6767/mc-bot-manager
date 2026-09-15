@@ -32,7 +32,7 @@ export async function POST(
   void startBot(record);
   logDiscordEvent("bot", {
     title: "Bot started",
-    color: 0x10b981,
+    color: 0x0ea5e9,
     fields: [
       { name: "Bot", value: record.name, inline: true },
       { name: "Owner", value: auth.user?.username ?? "unknown", inline: true },

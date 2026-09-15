@@ -156,23 +156,14 @@ export async function ensurePlans() {
         console.log(`[shop] self-heal: ENTERPRISE ${plan.id} bots 15 -> 8`);
       }
     }
-    // One-time $0.10 test plan (guarded by a settings flag so deleting it in
-    // the admin panel actually removes it).
-    const [flag] = await db.select().from(appSettings).where(eq(appSettings.key, "test_plan_created"));
-    if (!flag) {
-      await db.insert(shopPlans).values({
-        tier: "TEST",
-        price: 0.1,
-        bots: 1,
-        hours: 1,
-        features: JSON.stringify(["1 bot slot", "payment-flow test plan", "instant delivery, same as paid tiers"]),
-        popular: "false",
-        active: "true",
-        discount: 0,
-      });
-      await db.insert(appSettings).values({ key: "test_plan_created", value: "true" })
-        .onConflictDoUpdate({ target: appSettings.key, set: { value: "true" } });
-      console.log("[shop] created $0.10 TEST plan");
+    // The $0.10 TEST plan is retired — deactivate any row that still exists
+    // so it disappears from the shop on the next load.
+    const testPlans = await db.select().from(shopPlans).where(eq(shopPlans.tier, "TEST"));
+    for (const tp of testPlans) {
+      if (tp.active === "true") {
+        await db.update(shopPlans).set({ active: "false" }).where(eq(shopPlans.id, tp.id));
+        console.log(`[shop] retired TEST plan ${tp.id}`);
+      }
     }
   } catch (e) {
     console.warn("[shop] ensurePlans failed:", e instanceof Error ? e.message : e);

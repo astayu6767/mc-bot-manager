@@ -48,6 +48,8 @@ function tabFromPath(pathname: string): Tab {
 export default function AppShell() {
   const [me, setMe] = useState<Me | null>(null);
   const [discordConfigured, setDiscordConfigured] = useState(true);
+  // Plan status shown as a bar under the account name in the sidebar.
+  const [planBar, setPlanBar] = useState<{ pct: number; label: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const pathname = usePathname();
   const [tab, setTabState] = useState<Tab>(() => tabFromPath(pathname));
@@ -110,8 +112,36 @@ export default function AppShell() {
       const data = await res.json();
       setMe(data.user ?? null);
       setDiscordConfigured(data.discordConfigured ?? false);
+      if (data.user) {
+        try {
+          const lres = await fetch("/api/licenses", { cache: "no-store" });
+          if (lres.ok) {
+            const st = await lres.json();
+            if (data.user.role === "admin") {
+              setPlanBar({ pct: 100, label: "Admin · unlimited" });
+            } else if (Array.isArray(st?.activeLicenses) && st.activeLicenses.length > 0) {
+              const now = Date.now();
+              const exp = (l: { expiresAt: string }) => new Date(l.expiresAt).getTime();
+              const furthest = st.activeLicenses.reduce((a: { expiresAt: string; createdAt: string }, l: { expiresAt: string; createdAt: string }) => (exp(l) > exp(a) ? l : a));
+              const total = Math.max(1, exp(furthest) - new Date(furthest.createdAt).getTime());
+              const remaining = Math.max(0, exp(furthest) - now);
+              const pct = Math.max(3, Math.min(100, Math.round((remaining / total) * 100)));
+              const hrs = Math.floor(remaining / 3_600_000);
+              const label = hrs >= 24 ? `${Math.floor(hrs / 24)}d ${hrs % 24}h left` : `${hrs}h left`;
+              setPlanBar({ pct, label: `${st.totalSlots ?? 0} slots · ${label}` });
+            } else {
+              setPlanBar(null);
+            }
+          }
+        } catch {
+          // plan bar is cosmetic — ignore fetch errors
+        }
+      } else {
+        setPlanBar(null);
+      }
     } catch {
       setMe(null);
+      setPlanBar(null);
     } finally {
       setLoaded(true);
     }
@@ -205,7 +235,7 @@ export default function AppShell() {
         } ${collapsed ? "lg:w-[76px]" : "lg:w-64"}`}
       >
         <div className={`flex items-center gap-3 py-5 ${collapsed ? "justify-center px-3 lg:flex-col lg:gap-2" : "px-5"}`}>
-          <Logo size={collapsed ? 32 : 40} className="drop-shadow-[0_4px_16px_rgba(16,185,129,0.35)]" />
+          <Logo size={collapsed ? 32 : 40} className="drop-shadow-[0_4px_16px_rgba(14,165,233,0.35)]" />
           {!collapsed && (
             <div className="leading-tight">
               <div className="text-sm font-bold tracking-tight">
@@ -285,6 +315,23 @@ export default function AppShell() {
               <div className="text-[11px] text-slate-500">
                 {me.isGuest ? "guest account" : me.username.includes("local:") ? "local" : "discord"}
               </div>
+              {planBar ? (
+                <div className="mt-1.5">
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-slate-700/50">
+                    <div
+                      className="h-full rounded-full bg-sky-400"
+                      style={{ width: `${planBar.pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 text-[10px] font-medium text-slate-500">
+                    {planBar.label}
+                  </div>
+                </div>
+              ) : (
+                me.role !== "admin" && (
+                  <div className="mt-1 text-[10px] text-slate-600">No active plan</div>
+                )
+              )}
             </div>
           </div>
           <button
@@ -407,7 +454,7 @@ function LoginScreen({
         <div className="flex flex-col items-center text-center">
           <Logo
             size={72}
-            className="drop-shadow-[0_8px_30px_rgba(16,185,129,0.45)]"
+            className="drop-shadow-[0_8px_30px_rgba(14,165,233,0.45)]"
           />
           <h1 className="mt-5 text-2xl font-bold tracking-tight">
             MC Bot Manager

@@ -179,7 +179,7 @@ export async function POST(req: Request) {
 
   logDiscordEvent("bot", {
     title: "Bot created",
-    color: 0x10b981,
+    color: 0x0ea5e9,
     fields: [
       { name: "Bot", value: inserted.name, inline: true },
       { name: "Owner", value: user.username, inline: true },

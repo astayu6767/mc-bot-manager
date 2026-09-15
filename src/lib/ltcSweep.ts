@@ -209,7 +209,7 @@ export async function forwardInvoice(invoiceId: string): Promise<SweepResult> {
     logDiscordEvent("purchase", {
       title: "Payment forwarded",
       description: "Invoice paid and swept to the owner wallet.",
-      color: 0x10b981,
+      color: 0x0ea5e9,
       fields: [
         { name: "Amount", value: `${invoice.amountLTC} LTC`, inline: true },
         { name: "Tx", value: result.txid ? `\`${result.txid.slice(0, 32)}…\`` : "broadcast", inline: true },
