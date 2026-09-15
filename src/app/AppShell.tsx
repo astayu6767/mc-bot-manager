@@ -152,6 +152,25 @@ export default function AppShell() {
     return () => clearTimeout(first);
   }, [loadMe]);
 
+  // Discourage casual inspection/saving: block the right-click menu (the
+  // "Inspect" entry) and the save/view-source shortcuts. The app itself is a
+  // JS-rendered shell behind auth, so a saved page contains no app content.
+  // DevTools keyboard shortcuts stay available — the admin needs them.
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent) => e.preventDefault();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && ["s", "u"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       if (ev.data?.type === "mcbm:login-success") {
