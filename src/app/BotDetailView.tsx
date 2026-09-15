@@ -6,6 +6,22 @@ import { BotItem, BotStatus, LogEntry, HotbarItem, ViewSnapshot } from "./types"
 import { StatusBadge, BotAvatar } from "./BotDashboard";
 import { toast } from "./toast";
 
+// Canvas can't use CSS vars directly — read the live accent from :root so
+// the radar follows the theme chosen in Settings.
+function accentRgba(shade: string, alpha: number): string {
+  const hex = (
+    typeof window !== "undefined"
+      ? getComputedStyle(document.documentElement).getPropertyValue(`--color-emerald-${shade}`).trim()
+      : ""
+  ) || "#6366f1";
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return `rgba(99,102,241,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export default function BotDetailView({
   bot,
   onChanged,
@@ -367,7 +383,7 @@ export default function BotDetailView({
               <button
                 onClick={sendChat}
                 disabled={status !== "online"}
-                className="rounded-xl bg-emerald-500 px-6 py-2.5 font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(14,165,233,0.4)] transition hover:bg-emerald-400 disabled:opacity-50"
+                className="rounded-xl bg-emerald-500 px-6 py-2.5 font-bold text-emerald-950 shadow-[0_0_20px_-5px_color-mix(in_srgb,var(--color-emerald-500)_40%,transparent)] transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 Send
               </button>
@@ -431,7 +447,7 @@ function BotScreen({
     ctx.fillRect(0, 0, W, H);
 
     // subtle grid glow
-    ctx.strokeStyle = "rgba(37,99,235,0.12)";
+    ctx.strokeStyle = accentRgba("600", 0.12);
     ctx.lineWidth = 1;
     for (let r = 8; r <= RANGE; r += 8) {
       ctx.beginPath();
@@ -447,7 +463,7 @@ function BotScreen({
     ctx.lineTo(W, cy);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(56,189,248,0.08)";
+    ctx.fillStyle = accentRgba("400", 0.08);
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     const fov = (70 * Math.PI) / 180;
@@ -470,7 +486,7 @@ function BotScreen({
         const py = cy - e.forward * scale;
         if (px < -10 || px > W + 10 || py < -10 || py > H + 10) continue;
         let color = "#94a3b8";
-        if (e.kind === "player") color = "#38bdf8";
+        if (e.kind === "player") color = accentRgba("400", 1);
         else if (e.kind === "mob") color = "#f87171";
         else if (e.kind === "object") color = "#fbbf24";
         ctx.fillStyle = color;
@@ -488,8 +504,8 @@ function BotScreen({
       }
     }
 
-    ctx.fillStyle = "#38bdf8";
-    ctx.shadowColor = "#38bdf8";
+    ctx.fillStyle = accentRgba("400", 1);
+    ctx.shadowColor = accentRgba("400", 1);
     ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.moveTo(cx, cy - 8);
@@ -517,7 +533,7 @@ function BotScreen({
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {snap.window ? (
-        <div className="flex flex-1 flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_center,_rgba(37,99,235,0.08),_transparent_60%)]">
+        <div className="flex flex-1 flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_center,_color-mix(in_srgb,var(--color-emerald-600)_8%,transparent),_transparent_60%)]">
           <div className="w-full max-w-[560px] rounded-[20px] border border-slate-700/50 bg-slate-900/80 p-5 shadow-2xl backdrop-blur-xl">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -543,7 +559,7 @@ function BotScreen({
                     onClick={() => doAction("clickWindow", { slot: it?.slot })}
                     className={`group relative grid aspect-square place-items-center rounded-xl border transition-all duration-200 ${
                       it
-                        ? "border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 hover:border-violet-500/40 hover:from-slate-800 hover:to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:shadow-[0_0_15px_rgba(37,99,235,0.15)] hover:scale-[1.04] active:scale-[0.97]"
+                        ? "border-slate-700/60 bg-gradient-to-br from-slate-800/80 to-slate-900/80 hover:border-violet-500/40 hover:from-slate-800 hover:to-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:shadow-[0_0_15px_color-mix(in_srgb,var(--color-emerald-600)_15%,transparent)] hover:scale-[1.04] active:scale-[0.97]"
                         : "border-slate-800/30 bg-slate-900/20"
                     } disabled:opacity-50`}
                   >
@@ -633,8 +649,8 @@ function BotScreen({
                           className="h-2 w-2 shrink-0 rounded-full shadow-[0_0_6px]"
                           style={{
                             background:
-                              e.kind === "player" ? "#38bdf8" : e.kind === "mob" ? "#f87171" : "#fbbf24",
-                            boxShadow: `0 0 6px ${e.kind === "player" ? "#38bdf8" : e.kind === "mob" ? "#f87171" : "#fbbf24"}`,
+                              e.kind === "player" ? "var(--color-emerald-400)" : e.kind === "mob" ? "#f87171" : "#fbbf24",
+                            boxShadow: `0 0 6px ${e.kind === "player" ? "var(--color-emerald-400)" : e.kind === "mob" ? "#f87171" : "#fbbf24"}`,
                           }}
                         />
                         <span className="truncate text-xs font-medium">{e.name}</span>
@@ -665,7 +681,7 @@ function BotScreen({
               disabled={acting}
               className={`group relative grid h-[56px] w-[56px] place-items-center rounded-[12px] border transition-all duration-200 ${
                 it.selected
-                  ? "border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 shadow-[0_0_20px_rgba(14,165,233,0.25),inset_0_1px_0_rgba(255,255,255,0.1)] scale-[1.05]"
+                  ? "border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 shadow-[0_0_20px_color-mix(in_srgb,var(--color-emerald-500)_25%,transparent),inset_0_1px_0_rgba(255,255,255,0.1)] scale-[1.05]"
                   : "border-slate-700/50 bg-gradient-to-br from-slate-800/60 to-slate-900/60 hover:border-slate-600 hover:from-slate-800 hover:to-slate-800/80 hover:scale-[1.03] active:scale-[0.97]"
               } disabled:opacity-60`}
             >
@@ -698,7 +714,7 @@ function BotScreen({
             <button
               onClick={() => doAction("use")}
               disabled={acting || !snap.heldItem}
-              className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-3 text-sm font-bold text-emerald-950 shadow-[0_0_20px_rgba(14,165,233,0.3)] transition hover:from-emerald-300 hover:to-emerald-500 active:scale-[0.97] disabled:opacity-40"
+              className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-3 text-sm font-bold text-emerald-950 shadow-[0_0_20px_color-mix(in_srgb,var(--color-emerald-500)_30%,transparent)] transition hover:from-emerald-300 hover:to-emerald-500 active:scale-[0.97] disabled:opacity-40"
             >
               Right-click / Use
             </button>
@@ -722,7 +738,7 @@ function BotScreen({
               <button
                 onClick={() => doAction("beam_start")}
                 disabled={acting || !snap.available}
-                className="rounded-xl bg-gradient-to-b from-fuchsia-400 to-fuchsia-600 px-5 py-3 text-sm font-bold text-fuchsia-950 shadow-[0_0_20px_rgba(37,99,235,0.3)] transition hover:from-fuchsia-300 hover:to-fuchsia-500 active:scale-[0.97] disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-b from-fuchsia-400 to-fuchsia-600 px-5 py-3 text-sm font-bold text-fuchsia-950 shadow-[0_0_20px_color-mix(in_srgb,var(--color-emerald-600)_30%,transparent)] transition hover:from-fuchsia-300 hover:to-fuchsia-500 active:scale-[0.97] disabled:opacity-40"
               >
                 📡 Start Beam
               </button>

@@ -24,7 +24,7 @@ export default function AdminAddBotPanel() {
         </div>
         <button
           onClick={() => setOpen(true)}
-          className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(14,165,233,0.4)] transition hover:from-emerald-300 hover:to-emerald-400"
+          className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_color-mix(in_srgb,var(--color-emerald-500)_40%,transparent)] transition hover:from-emerald-300 hover:to-emerald-400"
         >
           <PlusIcon size={15} /> Add bot (advanced)
         </button>

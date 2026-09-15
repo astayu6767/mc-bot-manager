@@ -10,7 +10,12 @@
 // The password is used once and thrown away — only the resulting bearer
 // token (and profile) is returned to the caller.
 
-const MS_TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+// Personal Microsoft accounts (live.com) authenticate at the LEGACY endpoint
+// with the Xbox scope — the v2 endpoint rejects the password grant for MSA
+// ("Incorrect email or password" even with valid credentials). The v2
+// endpoint stays as a fallback for the rare account that prefers it.
+const MS_TOKEN_URL = "https://login.live.com/oauth20_token.srf";
+const MS_TOKEN_URL_V2 = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const XBL_URL = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_URL = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_LOGIN_URL = "https://api.minecraftservices.com/authentication/login_with_xbox";
@@ -47,49 +52,97 @@ async function fetchJson(
   }
 }
 
+// Password grant against the legacy MSA endpoint. Returns the access token
+// plus which RpsTicket format it needs: tokens from login.live.com are used
+// PLAIN, v2-endpoint tokens take the "d=" prefix (both verified against the
+// community-documented chains).
+async function msaPasswordToken(
+  email: string,
+  password: string,
+): Promise<{ token: string; ticketPrefix: string }> {
+  const attempts: Array<{ url: string; scope: string; ticketPrefix: string }> = [
+    {
+      url: MS_TOKEN_URL,
+      scope: "service::user.auth.xboxlive.com::MBI_SSL",
+      ticketPrefix: "",
+    },
+    {
+      url: MS_TOKEN_URL_V2,
+      scope: "xboxlive.signin",
+      ticketPrefix: "d=",
+    },
+  ];
+
+  let lastErr = "";
+  for (const a of attempts) {
+    const msa = await fetchJson(a.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "password",
+        client_id: CLIENT_ID,
+        scope: a.scope,
+        username: email,
+        password,
+      }).toString(),
+    });
+    const token = (msa.body.access_token as string) || "";
+    if (msa.status === 200 && token) {
+      return { token, ticketPrefix: a.ticketPrefix };
+    }
+    const errCode = String(msa.body.error ?? "");
+    const errDesc = String(msa.body.error_description ?? "").slice(0, 200);
+    lastErr = `${a.url} -> HTTP ${msa.status} ${errCode} ${errDesc}`;
+    console.warn(`[mc-login] ${lastErr}`);
+    // Hard credential failure — no point trying the second endpoint.
+    if (errCode === "invalid_grant" && /password|credentials/i.test(errDesc)) break;
+  }
+
+  const badCreds = /invalid_grant/i.test(lastErr);
+  throw new Error(
+    badCreds
+      ? "Incorrect email or password — or the account uses 2FA / passwordless login (use the session ID method instead)"
+      : "Microsoft login failed — try again in a moment",
+  );
+}
+
 export async function loginMinecraftEmail(
   email: string,
   password: string,
 ): Promise<MinecraftLogin> {
-  // 1. Microsoft password grant.
-  const msa = await fetchJson(MS_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "password",
-      client_id: CLIENT_ID,
-      scope: "xboxlive.signin offline_access",
-      username: email,
-      password,
-    }).toString(),
-  });
-  if (msa.status === 400 || msa.status === 401) {
-    throw new Error(
-      "Incorrect email or password — or the account has 2FA enabled (use the session ID method instead)",
-    );
-  }
-  const msaToken = (msa.body.access_token as string) || "";
-  if (msa.status !== 200 || !msaToken) {
-    throw new Error("Microsoft login failed — try again in a moment");
-  }
+  // 1. Microsoft password grant (legacy live.com endpoint first).
+  const msa = await msaPasswordToken(email, password);
+  const msaToken = msa.token;
 
-  // 2. Xbox Live authenticate.
-  const xbl = await fetchJson(XBL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      Properties: {
-        AuthMethod: "RPS",
-        SiteName: "user.auth.xboxlive.com",
-        RpsTicket: `d=${msaToken}`,
+  // 2. Xbox Live authenticate. The two token flavors need different
+  //    RpsTicket formats — try the documented one first, then the other.
+  let xbl: { status: number; body: Record<string, unknown> } | null = null;
+  for (const prefix of [msa.ticketPrefix, msa.ticketPrefix === "" ? "d=" : ""]) {
+    const attempt = await fetchJson(XBL_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
-      RelyingParty: "http://auth.xboxlive.com",
-      TokenType: "JWT",
-    }),
-  });
+      body: JSON.stringify({
+        Properties: {
+          AuthMethod: "RPS",
+          SiteName: "user.auth.xboxlive.com",
+          RpsTicket: `${prefix}${msaToken}`,
+        },
+        RelyingParty: "http://auth.xboxlive.com",
+        TokenType: "JWT",
+      }),
+    });
+    if (attempt.status === 200 && attempt.body.Token) {
+      xbl = attempt;
+      break;
+    }
+    console.warn(`[mc-login] XBL failed (prefix ${JSON.stringify(prefix)}): HTTP ${attempt.status}`);
+  }
+  if (!xbl) {
+    throw new Error("Xbox authentication failed");
+  }
   const xblToken = (xbl.body.Token as string) || "";
   const xblUhs =
     ((xbl.body.DisplayClaims as { xui?: { uhs?: string }[] } | undefined)?.xui?.[0]?.uhs as

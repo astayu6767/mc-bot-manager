@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
       </head>
-      <body className="min-h-screen bg-[#070b14] text-slate-100 antialiased">
+      <body className="min-h-screen bg-[#0a0c15] text-slate-100 antialiased">
         <div className="app-bg" aria-hidden />
         {children}
       </body>

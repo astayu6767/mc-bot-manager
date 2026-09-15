@@ -235,7 +235,7 @@ export default function AppShell() {
         } ${collapsed ? "lg:w-[76px]" : "lg:w-64"}`}
       >
         <div className={`flex items-center gap-3 py-5 ${collapsed ? "justify-center px-3 lg:flex-col lg:gap-2" : "px-5"}`}>
-          <Logo size={collapsed ? 32 : 40} className="drop-shadow-[0_4px_16px_rgba(14,165,233,0.35)]" />
+          <Logo size={collapsed ? 32 : 40} className="drop-shadow-[0_4px_16px_color-mix(in_srgb,var(--color-emerald-500)_35%,transparent)]" />
           {!collapsed && (
             <div className="leading-tight">
               <div className="text-sm font-bold tracking-tight">
@@ -454,7 +454,7 @@ function LoginScreen({
         <div className="flex flex-col items-center text-center">
           <Logo
             size={72}
-            className="drop-shadow-[0_8px_30px_rgba(14,165,233,0.45)]"
+            className="drop-shadow-[0_8px_30px_color-mix(in_srgb,var(--color-emerald-500)_45%,transparent)]"
           />
           <h1 className="mt-5 text-2xl font-bold tracking-tight">
             MC Bot Manager

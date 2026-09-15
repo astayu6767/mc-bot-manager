@@ -28,6 +28,20 @@ export type ThemePreset = {
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
+    id: "indigo",
+    label: "Indigo",
+    ramp: {
+      "200": "#c7d2fe",
+      "300": "#a5b4fc",
+      "400": "#818cf8",
+      "500": "#6366f1",
+      "600": "#4f46e5",
+      "700": "#4338ca",
+      "900": "#312e81",
+      "950": "#1e1b4b",
+    },
+  },
+  {
     id: "blue",
     label: "Blue",
     ramp: {
@@ -113,7 +127,7 @@ export const THEME_PRESETS: ThemePreset[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = "blue";
+export const DEFAULT_THEME_ID = "indigo";
 
 const RAMP_SHADES = ["200", "300", "400", "500", "600", "700", "900", "950"] as const;
 const VAR_FAMILIES = [

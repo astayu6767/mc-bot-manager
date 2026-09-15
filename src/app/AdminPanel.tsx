@@ -1645,7 +1645,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                 <div key={k.id} className="group flex items-center justify-between rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 backdrop-blur transition hover:border-amber-500/30 hover:bg-slate-800/60">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_8px_color-mix(in_srgb,var(--color-emerald-400)_50%,transparent)]" />
                       <code className="truncate rounded-lg bg-amber-500/10 px-2.5 py-1 text-xs font-mono font-bold tracking-wide text-amber-300 ring-1 ring-amber-500/20">{k.key}</code>
                       <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-300">{k.slots} slots</span>
                       <span className="text-[11px] text-slate-500">{k.durationDays}d {k.durationHours}h</span>
@@ -1937,7 +1937,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
         <div className="relative overflow-hidden rounded-[20px] border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.08] via-indigo-500/[0.05] to-slate-900/60 p-[1px]">
           <div className="rounded-[19px] bg-slate-900/90 backdrop-blur">
             <div className="flex items-center gap-3 px-6 py-5">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.3)]"><CartIcon size={20} /></div>
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-[0_0_20px_color-mix(in_srgb,var(--color-emerald-600)_30%,transparent)]"><CartIcon size={20} /></div>
               <div className="flex-1">
                 <h3 className="text-[15px] font-bold tracking-tight text-white">Shop Management</h3>
                 <p className="text-xs text-slate-400">Manage $5 / $8 / $15 plans, discounts, owner LTC address, and invoices</p>

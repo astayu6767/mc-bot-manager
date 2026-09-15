@@ -498,7 +498,7 @@ export function AddBotModal({
       <div className="premium-modal flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[24px]">
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-6 py-5">
           <div className="flex items-center gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-[0_0_20px_-5px_rgba(14,165,233,0.5)]">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white shadow-[0_0_20px_-5px_color-mix(in_srgb,var(--color-emerald-500)_50%,transparent)]">
               <PlusIcon size={22} />
             </div>
             <div>
@@ -631,7 +631,7 @@ export function AddBotModal({
           <button
             onClick={submit}
             disabled={submitting}
-            className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(14,165,233,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-50"
+            className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_color-mix(in_srgb,var(--color-emerald-500)_40%,transparent)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create & connect"}
           </button>
@@ -1171,7 +1171,7 @@ export function EditBotModal({
           <button
             onClick={save}
             disabled={saving}
-            className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_rgba(14,165,233,0.4)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-50"
+            className="rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-500 px-5 py-2.5 text-sm font-bold text-emerald-950 shadow-[0_0_20px_-5px_color-mix(in_srgb,var(--color-emerald-500)_40%,transparent)] transition hover:from-emerald-300 hover:to-emerald-400 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
           </button>
