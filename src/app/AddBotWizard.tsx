@@ -126,6 +126,11 @@ export default function AddBotWizard({
   const [beamMode, setBeamMode] = useState<string | null>(null);
   // AI mode can be disabled site-wide from the admin panel — grey it out.
   const [aiDisabled, setAiDisabled] = useState(false);
+  // Account login mode: paste a session ID, or email + password.
+  const [loginMode, setLoginMode] = useState<"session" | "msa">("session");
+  const [mcEmail, setMcEmail] = useState("");
+  const [mcPassword, setMcPassword] = useState("");
+  const [msaBusy, setMsaBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -182,6 +187,34 @@ export default function AddBotWizard({
       setSessionError("Network error while checking the session ID");
     } finally {
       setChecking(false);
+    }
+  }
+
+  // Email + password -> server runs the Microsoft login chain and returns
+  // the SAME kind of bearer token the session ID method uses.
+  async function loginWithEmail() {
+    if (msaBusy) return;
+    setMsaBusy(true);
+    setSessionError(null);
+    setProfile(null);
+    try {
+      const res = await fetch("/api/auth/mc-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: mcEmail.trim(), password: mcPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSessionError(data.error ?? "Login failed");
+      } else {
+        setToken(data.token);
+        setProfile({ name: data.name, id: data.id });
+        setMcPassword("");
+      }
+    } catch {
+      setSessionError("Network error while logging in");
+    } finally {
+      setMsaBusy(false);
     }
   }
 
@@ -303,15 +336,85 @@ export default function AddBotWizard({
           <div key={step} className="flex-1 overflow-y-auto p-6 animate-fade-in">
             {step === 0 && (
               <div className="space-y-4">
-                <Field label="Session ID">
-                  <textarea
-                    value={token}
-                    onChange={(e) => onTokenChange(e.target.value)}
-                    placeholder="Paste your session ID…"
-                    rows={3}
-                    className={`${inputClass} resize-none font-mono text-xs`}
-                  />
-                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { id: "session", label: "Session ID" },
+                      { id: "msa", label: "Email + Password" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setLoginMode(m.id);
+                        setSessionError(null);
+                      }}
+                      className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                        loginMode === m.id
+                          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
+                          : "border-slate-700/80 bg-slate-950/60 text-slate-400 hover:border-slate-500"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                {loginMode === "session" ? (
+                  <Field label="Session ID">
+                    <textarea
+                      value={token}
+                      onChange={(e) => onTokenChange(e.target.value)}
+                      placeholder="Paste your session ID…"
+                      rows={3}
+                      className={`${inputClass} resize-none font-mono text-xs`}
+                    />
+                  </Field>
+                ) : (
+                  <div className="space-y-3">
+                    <Field label="Minecraft account email">
+                      <input
+                        value={mcEmail}
+                        onChange={(e) => setMcEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        type="email"
+                        autoComplete="off"
+                        className={inputClass}
+                      />
+                    </Field>
+                    <Field label="Password">
+                      <input
+                        value={mcPassword}
+                        onChange={(e) => setMcPassword(e.target.value)}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" &&
+                          mcEmail.trim() &&
+                          mcPassword &&
+                          void loginWithEmail()
+                        }
+                        placeholder="Your Minecraft password"
+                        type="password"
+                        autoComplete="off"
+                        className={inputClass}
+                      />
+                    </Field>
+                    <button
+                      type="button"
+                      onClick={() => void loginWithEmail()}
+                      disabled={msaBusy || !mcEmail.trim() || !mcPassword}
+                      className="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                    >
+                      {msaBusy ? "Logging in…" : "Log in"}
+                    </button>
+                    <p className="text-[11px] leading-relaxed text-slate-500">
+                      The password is used once to sign you in and is never
+                      stored — the bot keeps only the access token, same as
+                      the session ID method. Accounts with 2FA need the
+                      session ID method.
+                    </p>
+                  </div>
+                )}
                 {checking && (
                   <p className="flex items-center gap-2 text-sm text-slate-400">
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-600 border-t-emerald-400" />

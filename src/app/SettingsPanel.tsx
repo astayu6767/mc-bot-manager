@@ -1,6 +1,9 @@
 "use client";
 
 import { Logo } from "./Logo";
+import { useState } from "react";
+import { THEME_PRESETS, applyThemePreset, loadThemeId, saveThemeId } from "@/lib/theme";
+import { toast } from "./toast";
 import {
   GearIcon,
   BotFaceIcon,
@@ -29,6 +32,17 @@ export default function SettingsPanel({
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     onChange();
+  }
+
+  const [activeTheme, setActiveTheme] = useState<string | null>(null);
+  const currentTheme = activeTheme ?? loadThemeId();
+
+  function pickTheme(id: string) {
+    applyThemePreset(id);
+    saveThemeId(id);
+    setActiveTheme(id);
+    const preset = THEME_PRESETS.find((p) => p.id === id);
+    toast(preset ? `${preset.label} theme applied` : "Theme applied", "success");
   }
 
   return (
@@ -129,6 +143,42 @@ export default function SettingsPanel({
             title="Live bot view"
             desc="Radar, hotbar, and item control"
           />
+        </div>
+      </section>
+
+      {/* Appearance */}
+      <section className="glass rounded-2xl p-5 transition-colors hover:border-slate-700">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Appearance
+        </h3>
+        <p className="mt-1 text-sm text-slate-400">
+          Accent color — applies to the whole site instantly and is remembered
+          on this device.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2.5">
+          {THEME_PRESETS.map((preset) => {
+            const on = currentTheme === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => pickTheme(preset.id)}
+                title={preset.label}
+                className={`group flex items-center gap-2.5 rounded-xl border px-3 py-2 transition ${
+                  on
+                    ? "border-slate-500 bg-slate-800/70"
+                    : "border-slate-800 bg-slate-900/40 hover:border-slate-600"
+                }`}
+              >
+                <span
+                  className="h-4 w-4 rounded-full ring-2 ring-white/10"
+                  style={{ backgroundColor: preset.ramp["500"] }}
+                />
+                <span className={`text-xs font-medium ${on ? "text-white" : "text-slate-400"}`}>
+                  {preset.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </section>
 

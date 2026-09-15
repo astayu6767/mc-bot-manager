@@ -3,6 +3,7 @@ import { users, bots } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { stopBot } from "@/lib/botManager";
+import { addIpBan, listIpBans, removeIpBan } from "@/lib/ipBans";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,6 +53,7 @@ export async function POST(
     .where(eq(users.id, id));
 
   let stopped = 0;
+  let ipBanned = false;
   if (body.banned) {
     // Stop their running bots (no deletes — everything survives the ban).
     const owned = await db.select().from(bots).where(eq(bots.userId, id));
@@ -65,12 +67,56 @@ export async function POST(
         );
       }
     }
+    // Wall off their last known IP too — otherwise they just log out and
+    // register a fresh account from the same machine. The middleware's IP
+    // ban guard blocks EVERY route for that IP (pages + register + API).
+    if (user.lastIp) {
+      try {
+        await addIpBan({
+          ip: user.lastIp,
+          reason: `Site ban of "${user.username}"`,
+          bannedBy: me.username,
+        });
+        ipBanned = true;
+      } catch (err) {
+        console.warn(
+          `[site-ban] IP ban failed for ${user.lastIp}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
     console.warn(
-      `[admin] ${me.username} site-banned "${user.username}" — ${stopped} bot(s) stopped, nothing deleted`,
+      `[admin] ${me.username} site-banned "${user.username}" — ${stopped} bot(s) stopped, IP ${ipBanned ? "banned" : "not on record"}, nothing deleted`,
     );
   } else {
+    // Unban: also lift the IP ban that came WITH this site ban — but never
+    // touch IP bans an admin added manually for other reasons.
+    if (user.lastIp) {
+      try {
+        const marker = `Site ban of "${user.username}"`;
+        const existing = (await listIpBans()).find(
+          (b) => b.ip === user.lastIp && b.reason === marker,
+        );
+        if (existing) {
+          await removeIpBan(existing.ip);
+          ipBanned = true; // reports "IP unbanned" below
+        }
+      } catch (err) {
+        console.warn(
+          `[site-unban] IP unban failed for ${user.lastIp}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
     console.warn(`[admin] ${me.username} unbanned "${user.username}"`);
   }
 
-  return Response.json({ ok: true, banned: body.banned, stopped });
+  return Response.json({
+    ok: true,
+    banned: body.banned,
+    stopped,
+    ipBanned,
+    note:
+      body.banned && !user.lastIp
+        ? "No IP on record — they can still register from the same IP. Use Blacklist after they log in once."
+        : undefined,
+  });
 }

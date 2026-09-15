@@ -799,7 +799,12 @@ export default function AdminPanel({ meId }: { meId: string }) {
           if (!res.ok) {
             toast(data.error || "Ban failed", "error");
           } else {
-            toast(`${u.username} banned (${data.stopped} bot(s) stopped)`, "info");
+            toast(
+              data.note
+                ? `${u.username} banned — but no IP on record, use Blacklist once they log in again`
+                : `${u.username} banned — account + IP blocked (${data.stopped} bot(s) stopped)`,
+              "info",
+            );
             await refresh();
           }
         } catch {
