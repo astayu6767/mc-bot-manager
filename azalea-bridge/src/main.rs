@@ -93,15 +93,42 @@ impl AccountTrait for TokenAccount {
     ) -> Pin<Box<dyn Future<Output = Result<(), ClientSessionServerError>> + Send + 'a>> {
         Box::pin(async move {
             let access_token = self.access_token.lock().clone();
-            session_join(SessionServerJoinOpts {
+            let result = session_join(SessionServerJoinOpts {
                 access_token: &access_token,
                 public_key,
                 private_key: private_key.as_slice(),
                 uuid: &self.uuid,
                 server_id,
-                proxy,
+                proxy: proxy.clone(),
             })
-            .await
+            .await;
+
+            match result {
+                Ok(()) => Ok(()),
+                // A broken or hijacked SOCKS5 proxy can kill the HTTPS auth
+                // call (expired MITM certificate, reset mid-handshake...).
+                // The game connection still exits through the proxy, so
+                // retry the Mojang auth directly from this host before
+                // giving up.
+                Err(err) if proxy.is_some() => {
+                    log_line(
+                        "system",
+                        format!(
+                            "Mojang auth through the proxy failed ({err}); retrying directly…"
+                        ),
+                    );
+                    session_join(SessionServerJoinOpts {
+                        access_token: &access_token,
+                        public_key,
+                        private_key: private_key.as_slice(),
+                        uuid: &self.uuid,
+                        server_id,
+                        proxy: None,
+                    })
+                    .await
+                }
+                Err(err) => Err(err),
+            }
         })
     }
 }
