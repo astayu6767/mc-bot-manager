@@ -1955,9 +1955,24 @@ async function aiConverse(
     return { intent: "positive", reply: "lets go" };
   }
   if (
-    /\b(yes|yea|yeah|yep|sure|ok|okay|oke|okey|okej|okie|okk|kk|alr|alright|down|lets|let'?s|bet|fs|for sure|ofc|aight|ight|yessir|yup|ye|mhm|mmk|why not|im down|i'?m down|down to|i can|i'?ll help|help|help u|help you|with u|im in|i'?m in)\b/.test(t)
+    /\b(yes|yea|yeah|yep|sure|ok|okay|oke|okey|okej|okie|oki|okii|okk|okok|oks|okee|okiee|kk|k|mk|alr|alright|down|lets|let'?s|bet|fs|for sure|ofc|aight|ight|yessir|yup|ye|mhm|mmk|why not|im down|i'?m down|down to|i can|i'?ll help|help|help u|help you|with u|im in|i'?m in)\b/.test(t)
   ) {
     return { intent: "positive", reply: "lets go" };
+  }
+  // Bare greeting ("ey", "yo", "sup") — they acknowledged but haven't
+  // answered yet. Push the question again from code instead of letting the
+  // model improvise (it used to answer random nonsense like "lol ur pretty
+  // good" because a lone greeting carries no context).
+  if (
+    /^(ey|eyy|eey|eyy+|yo|yoo+|hey+|hi+|hello+|yo yo|sup|wsp|wassup|wsup|what'?s up|wassap|hai+|ello|yerr|hola)\b[\s!.,?]*$/.test(t)
+  ) {
+    const nudges = [
+      "so ur down to help me out ?",
+      "u down for the 2v2 ?",
+      "so can u help me ?",
+      "u down to team up ?",
+    ];
+    return { intent: "neutral", reply: nudges[Math.floor(Math.random() * nudges.length)] };
   }
   if (/\b(channel|chanel|yt|youtube)\b/.test(t)) {
     return { intent: "question", reply: "same as my username" };
@@ -2800,8 +2815,17 @@ async function runBeamOnce(
         if (targetLeft) break;
         if (inbox.length <= consumed) continue; // silence → keep waiting
 
-        const r = inbox.slice(consumed).join(" ");
+        // Burst merge (same as handleReply): "oki" + "sent" arriving apart
+        // must be read as one thought.
+        let r = inbox.slice(consumed).join(" ");
         consumed = inbox.length;
+        for (let round = 0; round < 3; round++) {
+          await sleep(1900);
+          if (died || !rt.beamLoop || targetLeft) break;
+          if (inbox.length <= consumed) break;
+          r += " " + inbox.slice(consumed).join(" ");
+          consumed = inbox.length;
+        }
         history.push({ who: "them", text: r });
         log(rt, "system", `🔆 Beam: ${target} said "${r.slice(0, 60)}"`);
 
@@ -2872,8 +2896,18 @@ async function runBeamOnce(
       "negative" | "positive" | "continue" | "died" | "stopped"
     > => {
       if (inbox.length <= consumed) return "continue";
-      const reply = inbox.slice(consumed).join(" ");
+      // Players send bursts ("ey" ... "oki") — wait briefly and merge every
+      // line into ONE input so the classifier and the AI see the whole
+      // thought, not fragments that get answered out of context.
+      let reply = inbox.slice(consumed).join(" ");
       consumed = inbox.length;
+      for (let round = 0; round < 3; round++) {
+        await sleep(1900);
+        if (died || !rt.beamLoop || targetLeft) break;
+        if (inbox.length <= consumed) break;
+        reply += " " + inbox.slice(consumed).join(" ");
+        consumed = inbox.length;
+      }
       history.push({ who: "them", text: reply });
       log(rt, "system", `🔆 Beam: ${target} said "${reply.slice(0, 60)}"`);
 
