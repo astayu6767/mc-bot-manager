@@ -886,6 +886,7 @@ export function EditBotModal({
   const [spamTriggerWord, setSpamTriggerWord] = useState(bot.spamTriggerWord || "123");
   const [spamReplyMessage, setSpamReplyMessage] = useState(bot.spamReplyMessage || "add my discord stood014 to join");
   const [openerScript, setOpenerScript] = useState(bot.openerScript || "");
+  const [closingScript, setClosingScript] = useState(bot.closingScript || "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -906,6 +907,7 @@ export function EditBotModal({
       spamTriggerWord?: string;
       spamReplyMessage?: string;
       openerScript?: string;
+      closingScript?: string;
     } = {};
     if (token.trim()) payload.token = token.trim();
     if (engine !== bot.engine) payload.engine = engine;
@@ -928,6 +930,8 @@ export function EditBotModal({
       payload.spamReplyMessage = spamReplyMessage.trim();
     if (openerScript.trim() !== (bot.openerScript || ""))
       payload.openerScript = openerScript.trim();
+    if (closingScript.trim() !== (bot.closingScript || ""))
+      payload.closingScript = closingScript.trim();
       
     if (Object.keys(payload).length === 0) {
       setError("Change a field to save.");
@@ -1092,18 +1096,32 @@ export function EditBotModal({
               </Field>
 
               {beamType === "ai" && (
-                <Field
-                  label="Opener Script"
-                  hint="One message per line, up to 5 — sent as /msg to the opponent, one by one. Leave empty to spin between 5 built-in defaults."
-                >
-                  <textarea
-                    value={openerScript}
-                    onChange={(e) => setOpenerScript(e.target.value)}
-                    rows={4}
-                    placeholder={"yo\ncan you help me ?\ncause I am in a 2v2 event and I need a teamate ;["}
-                    className={inputClass + " resize-y font-mono text-xs"}
-                  />
-                </Field>
+                <>
+                  <Field
+                    label="Opener Script"
+                    hint="One message per line, up to 5 — sent as /msg to the opponent, one by one. Leave empty to spin between 5 built-in defaults."
+                  >
+                    <textarea
+                      value={openerScript}
+                      onChange={(e) => setOpenerScript(e.target.value)}
+                      rows={4}
+                      placeholder={"yo\ncan you help me ?\ncause I am in a 2v2 event and I need a teamate ;["}
+                      className={inputClass + " resize-y font-mono text-xs"}
+                    />
+                  </Field>
+                  <Field
+                    label="Closing Messages"
+                    hint="Sent after they agree — one per line, up to 3. {discord} = your discord, {ip} = the server IP. Leave empty for the default."
+                  >
+                    <textarea
+                      value={closingScript}
+                      onChange={(e) => setClosingScript(e.target.value)}
+                      rows={2}
+                      placeholder={"alr letme send you where to hop on, add me on discord {discord}\nlmk when sent"}
+                      className={inputClass + " resize-y font-mono text-xs"}
+                    />
+                  </Field>
+                </>
               )}
 
               {(beamType === "spam" || beamType === "lobby") && (

@@ -104,6 +104,9 @@ const BEAM_MODES: { id: string; title: string; blurb: string; icon: React.ReactN
   },
 ];
 
+const DEFAULT_CLOSING =
+  "alr letme send you where to hop on, add me on discord {discord}\nlmk when sent";
+
 const DEFAULT_OPENER =
   "yo\nsup, could you help me ?\ncause im in a 2v2 event and i need a teamate ;[";
 
@@ -146,6 +149,7 @@ export default function AddBotWizard({
   }, []);
   // 1v1 method config
   const [opener, setOpener] = useState(DEFAULT_OPENER);
+  const [closing, setClosing] = useState(DEFAULT_CLOSING);
   const [discordUser, setDiscordUser] = useState("");
   // adbot config
   const [lobbyMsg, setLobbyMsg] = useState("type 123 in chat for tier test all mode");
@@ -234,6 +238,7 @@ export default function AddBotWizard({
       };
       if (beamMode === "ai") {
         payload.openerScript = opener;
+        payload.closingScript = closing;
         payload.discordUser = discordUser.trim();
       } else {
         payload.spamMessage = lobbyMsg;
@@ -564,6 +569,17 @@ export default function AddBotWizard({
                     value={opener}
                     onChange={(e) => setOpener(e.target.value)}
                     rows={4}
+                    className={`${inputClass} resize-none`}
+                  />
+                </Field>
+                <Field
+                  label="Closing messages"
+                  hint="Sent after they agree — one per line, up to 3. {discord} = your discord below, {ip} = the server IP. Leave as-is for the default."
+                >
+                  <textarea
+                    value={closing}
+                    onChange={(e) => setClosing(e.target.value)}
+                    rows={2}
                     className={`${inputClass} resize-none`}
                   />
                 </Field>

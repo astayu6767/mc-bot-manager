@@ -2112,6 +2112,27 @@ function varyAdMessage(base: string): string {
   return out;
 }
 
+// Closing (discord drop) messages — per-bot script if set, else the built-in
+// default. One message per line, max 3. Placeholders: {discord} = the bot's
+// configured discord user, {ip} = the beam server IP (dot-safe).
+const DEFAULT_CLOSING =
+  "alr letme send you where to hop on, add me on discord {discord}\nlmk when sent";
+
+function getClosingLines(record: Bot, discordUser: string, safeIp: string): string[] {
+  const raw = (record.closingScript || "").trim();
+  const src = raw.length > 0 ? raw : DEFAULT_CLOSING;
+  return src
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((l) =>
+      l
+        .replace(/\{discord\}/gi, discordUser)
+        .replace(/\{ip\}/gi, safeIp.replace(/ \[dot\] /g, ".")),
+    );
+}
+
 // Run ONE recruit attempt against the nearest player. Returns an outcome.
 async function runBeamOnce(
   rt: BotRuntime,
@@ -2789,18 +2810,23 @@ async function runBeamOnce(
       rt.beamStage = "positive → dropping discord";
       log(rt, "system", "🔆 Beam: positive! Dropping discord.");
 
-      // They said yes → discord drop in the owner's style, then the follow-up.
-      await whisper(`alr letme send you where to hop on, add me on discord ${discordUser}`);
+      // Small human pause after their "ok" — replying instantly reads bot-like.
+      await sleep(humanGap(2100, 0.3));
       if (died) return "died";
       if (!rt.beamLoop) return "stopped";
-      await sleep(1800);
-      if (died) return "died";
-      if (!rt.beamLoop) return "stopped";
-      await whisper(`lmk when sent`);
+
+      // Discord drop lines — per-bot closing script or the default style.
+      const safeIp = serverIp.replace(/\./g, " [dot] ");
+      const closingLines = getClosingLines(record, discordUser, safeIp);
+      for (let ci = 0; ci < closingLines.length; ci++) {
+        await whisper(closingLines[ci]);
+        if (died) return "died";
+        if (!rt.beamLoop) return "stopped";
+        if (ci < closingLines.length - 1) await sleep(humanGap(1900, 0.25));
+      }
       log(rt, "system", "🔆 Beam: discord drop sent.");
 
       let gaveIp = false;
-      const safeIp = serverIp.replace(/\./g, " [dot] ");
 
       // Now wait for them to leave the server (meaning they went to add discord).
       rt.beamStage = `waiting for ${target} to leave…`;
@@ -2820,7 +2846,7 @@ async function runBeamOnce(
         let r = inbox.slice(consumed).join(" ");
         consumed = inbox.length;
         for (let round = 0; round < 3; round++) {
-          await sleep(1900);
+          await sleep(1000);
           if (died || !rt.beamLoop || targetLeft) break;
           if (inbox.length <= consumed) break;
           r += " " + inbox.slice(consumed).join(" ");
@@ -2899,10 +2925,13 @@ async function runBeamOnce(
       // Players send bursts ("ey" ... "oki") — wait briefly and merge every
       // line into ONE input so the classifier and the AI see the whole
       // thought, not fragments that get answered out of context.
+      // NOTE: gapOrReply already settles 500ms before this runs, so the
+      // effective catch window is 500ms + 1000ms round = 1.5s — don't lower
+      // the settle without re-checking burst capture.
       let reply = inbox.slice(consumed).join(" ");
       consumed = inbox.length;
       for (let round = 0; round < 3; round++) {
-        await sleep(1900);
+        await sleep(1000);
         if (died || !rt.beamLoop || targetLeft) break;
         if (inbox.length <= consumed) break;
         reply += " " + inbox.slice(consumed).join(" ");

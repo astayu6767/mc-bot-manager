@@ -43,6 +43,7 @@ export async function GET() {
       spamTriggerWord: b.spamTriggerWord,
       spamReplyMessage: b.spamReplyMessage,
       openerScript: b.openerScript,
+      closingScript: b.closingScript,
       status: rt.status,
       joined: rt.joined,
       lastError: rt.lastError ?? b.lastError,
@@ -94,6 +95,7 @@ export async function POST(req: Request) {
     spamTriggerWord?: string;
     spamReplyMessage?: string;
     openerScript?: string;
+    closingScript?: string;
   };
   try {
     body = await req.json();
@@ -148,6 +150,7 @@ export async function POST(req: Request) {
   const spamTriggerWord = (body.spamTriggerWord ?? "").trim() || "123";
   const spamReplyMessage = (body.spamReplyMessage ?? "").trim() || "add my discord stood014 to join";
   const openerScript = (body.openerScript ?? "").trim();
+  const closingScript = (body.closingScript ?? "").trim().slice(0, 500);
 
   const [inserted] = await db
     .insert(bots)
@@ -169,6 +172,7 @@ export async function POST(req: Request) {
       spamTriggerWord,
       spamReplyMessage,
       openerScript,
+      closingScript,
       status: "connecting",
       enabled: "true",
     })

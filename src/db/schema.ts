@@ -134,6 +134,9 @@ export const bots = pgTable("bots", {
   spamReplyMessage: text("spam_reply_message").notNull().default("add my discord stood014 to join"),
   // AI-beam opener script: one message per line (1-5). Empty = spin between built-in defaults.
   openerScript: text("opener_script").notNull().default(""),
+  // Closing (discord drop) messages for the 1v1 method — one per line,
+  // {discord}/{ip} placeholders; empty = built-in default
+  closingScript: text("closing_script").notNull().default(""),
   // Last known status: offline | connecting | online | error
   status: text("status").notNull().default("offline"),
   lastError: text("last_error"),

@@ -18,6 +18,7 @@ export type BotItem = {
   spamTriggerWord: string;
   spamReplyMessage: string;
   openerScript: string;
+  closingScript: string;
   status: BotStatus;
   joined: boolean;
   lastError: string | null;
