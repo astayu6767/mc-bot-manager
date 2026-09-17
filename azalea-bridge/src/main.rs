@@ -27,6 +27,7 @@ use azalea::{
 use azalea_auth::sessionserver::{
     join as session_join, ClientSessionServerError, SessionServerJoinOpts,
 };
+use azalea_entity::Position;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -352,8 +353,14 @@ fn apply_cmd(bot: &Client, state: &State, cmd: Cmd) {
             bot.set_crouching(on);
         }
         "look" => {
-            let pos = bot.position();
-            bot.look_at(azalea::Vec3::new(pos.x + 2.0, pos.y + 1.6, pos.z));
+            // The client may not be spawned yet (kicked before the server
+            // sent our position); position() panics on a missing component.
+            let target = bot
+                .get_component::<Position>()
+                .map(|pos| azalea::Vec3::new(pos.x + 2.0, pos.y + 1.6, pos.z));
+            if let Some(target) = target {
+                bot.look_at(target);
+            }
         }
         "select" => {
             if let Some(slot) = cmd.slot {
@@ -403,8 +410,22 @@ fn facing_from_yaw(yaw_deg: f32) -> &'static str {
     ["S", "SW", "W", "NW", "N", "NE", "E", "SE"][i]
 }
 
-fn snapshot(bot: &Client) -> Value {
-    // Position, direction, hunger, health – all infallible in 0.16 docs.rs
+/// Periodic status snapshot. Returns None while the client entity doesn't
+/// have its component bundle yet (e.g. kicked right after login, before the
+/// Spawn event) — the component accessors in snapshot_impl panic on missing
+/// components in azalea 0.16, and that panic used to kill the whole sidecar.
+fn snapshot(bot: &Client) -> Option<Value> {
+    if bot.get_component::<Position>().is_none() {
+        return None;
+    }
+    // Belt and braces: if any other component is still missing mid-spawn,
+    // skip this snapshot instead of unwinding out of the event handler.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| snapshot_impl(bot))).ok()
+}
+
+fn snapshot_impl(bot: &Client) -> Value {
+    // Position is pre-checked by the caller; the rest is covered by the
+    // catch_unwind wrapper above.
     let pos = bot.position();
     let hunger = bot.hunger();
     let food = hunger.food as f64;
@@ -528,7 +549,9 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
             *state.online.lock() = true;
             *state.last_tick.lock() = Some(std::time::Instant::now());
             emit(&json!({ "ev": "status", "status": "online" }));
-            emit(&snapshot(&bot));
+            if let Some(snap) = snapshot(&bot) {
+                emit(&snap);
+            }
         }
         Event::Chat(m) => {
             let line = m.message().to_string();
@@ -553,7 +576,9 @@ async fn handle(bot: Client, event: Event, state: State) -> eyre::Result<()> {
             // dedicated wall-clock task in main() so chat keeps working even
             // when the world isn't ticking (arena/server switches).
             if tick % 10 == 0 {
-                emit(&snapshot(&bot));
+                if let Some(snap) = snapshot(&bot) {
+                    emit(&snap);
+                }
             }
         }
         Event::Death(_) => {
