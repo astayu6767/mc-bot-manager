@@ -2386,7 +2386,21 @@ async function runBeamOnce(
     const txt = rawTxt.replace(/[\u00A7\u200B-\u200D\uFEFF●•]/g, " ").replace(/\s+/g, " ").trim();
     const low = txt.toLowerCase();
     if (low.includes("match started") || low.includes("duel started") || low.includes("fight started") || low.includes("game started")) matchStarted = true;
-    if (low.includes("vs ") || low.includes("versus") || low.includes("fighting") || low.includes("dueling")) {
+    // Public chat from other players ("name: message") must NEVER set the
+    // target — match announcements come from the system, not players. A lobby
+    // ad like "ey7_buj2is59p: MSg me to join Girls Vs Boys Smp" used to be
+    // parsed as a "vs" line and the bot messaged "Boys".
+    const chatPrefix = txt.match(/^([A-Za-z0-9_]{3,16}):\s+\S/);
+    const isPlayerChat =
+      !!chatPrefix &&
+      ![
+        "opponent","map","ping","range","mode","kit","server","arena","duel",
+        "match","rank","winner","loser","version","players","duration","status",
+        "region","type","ping","queue",
+      ].includes(chatPrefix[1].toLowerCase());
+    // "vs" extraction only from system lines, and only before the match
+    // starts — the system "You vs PLAYER" line always precedes match start.
+    if (!isPlayerChat && !matchStarted && (low.includes("vs ") || low.includes("versus") || low.includes("fighting") || low.includes("dueling"))) {
       // Some servers show "You vs PLAYER" or "Fighting PLAYER"
       const vsMatch = txt.match(/(?:vs\.?|versus|fighting|dueling|against)\s+(?:\[[^\]]+\]\s*)?([A-Za-z0-9_]{3,16})/i);
       if (vsMatch && vsMatch[1] && isValidUsername(vsMatch[1]) && vsMatch[1].toLowerCase() !== self.toLowerCase()) {
@@ -2397,7 +2411,7 @@ async function runBeamOnce(
     // Listen for the exact opponent name in the queue text
     // The chat often has bullets (●) or other symbols before it.
     // More robust: if line contains "Opponent", extract all valid usernames and pick last valid one
-    if (low.includes("opponent")) {
+    if (!isPlayerChat && low.includes("opponent")) {
       // First try original regex
       const oppMatch = txt.match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
       if (oppMatch && oppMatch[1] && isValidUsername(oppMatch[1]) && oppMatch[1].toLowerCase() !== self.toLowerCase()) {
@@ -2496,7 +2510,11 @@ async function runBeamOnce(
       for (let i = recentLogs.length - 1; i >= 0; i--) {
         const line = recentLogs[i].line;
         const clean = line.replace(/[\u00A7\u200B-\u200D\uFEFF●•]/g, " ").replace(/\s+/g, " ").trim();
-        if (clean.toLowerCase().includes("opponent")) {
+        const logPrefix = clean.match(/^([A-Za-z0-9_]{3,16}):\s+\S/);
+        const logIsPlayerChat =
+          !!logPrefix &&
+          !["opponent","map","ping","range","mode","kit","server","arena","duel","match","rank","winner","loser","version","players","duration","status","region","type","queue"].includes(logPrefix[1].toLowerCase());
+        if (!logIsPlayerChat && clean.toLowerCase().includes("opponent")) {
           const m = clean.match(/Opponent[^A-Za-z0-9_]*([A-Za-z0-9_]{3,16})/i);
           if (m && m[1] && isValidUsername(m[1]) && m[1].toLowerCase() !== self.toLowerCase()) {
             const lower = m[1].toLowerCase();
