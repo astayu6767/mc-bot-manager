@@ -66,6 +66,7 @@ type BotRuntime = {
   azaleaHbWatcher?: ReturnType<typeof setInterval> | null;
   azaleaRespawn?: boolean;
   azaleaLastRestart?: number;
+  startedAt?: number;
 };
 
 const MAX_LOGS = 300;
@@ -375,6 +376,44 @@ export function getRuntimeView(id: string) {
     };
   }
   return { status: rt.status, joined: rt.joined, lastError: rt.lastError };
+}
+
+export type BotInstanceInfo = {
+  botId: string;
+  status: string;
+  engine: "azalea" | "nmp" | null;
+  pid: number | null;
+  startedAt: number | null;
+  heartbeatAgeS: number | null;
+  tickAgeS: number | null;
+  online: boolean;
+  beamStage: string;
+};
+
+/// Registry view of every live bot runtime (engine processes we control).
+/// Used by the admin instances view; orphan OS processes are detected by the
+/// admin route itself via /proc.
+export function listBotInstances(): BotInstanceInfo[] {
+  const out: BotInstanceInfo[] = [];
+  for (const rt of runtimes.values()) {
+    if (!rt.bot && !rt.azaleaChild && rt.status === "offline") continue;
+    const pid =
+      typeof rt.azaleaChild?.pid === "number" ? rt.azaleaChild.pid : null;
+    out.push({
+      botId: rt.id,
+      status: rt.status,
+      engine: rt.azaleaChild ? "azalea" : rt.bot ? "nmp" : null,
+      pid,
+      startedAt: rt.startedAt ?? null,
+      heartbeatAgeS: rt.azaleaHbAt
+        ? Math.round((Date.now() - rt.azaleaHbAt) / 1000)
+        : null,
+      tickAgeS: rt.azaleaHbTickAgeS ?? null,
+      online: rt.azaleaHbOnline ?? rt.joined,
+      beamStage: rt.beaming ? rt.beamStage : "",
+    });
+  }
+  return out;
 }
 
 export function getLogs(id: string): LogEntry[] {
@@ -747,6 +786,7 @@ export async function startBot(record: Bot): Promise<void> {
   rt.status = "connecting";
   rt.joined = false;
   rt.lastError = null;
+  rt.startedAt = Date.now();
   const versionLabel =
     record.version && record.version !== "auto" ? record.version : "auto-detect";
   log(

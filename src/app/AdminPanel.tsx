@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
 import { EditBotModal } from "./BotDashboard";
-import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon, BrainIcon } from "./Icons";
+import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon, BrainIcon, EyeIcon } from "./Icons";
 import { toast } from "./toast";
 import { SkeletonTable } from "./Skeleton";
 import { BotItem } from "./types";
@@ -55,6 +55,33 @@ type AdminBot = {
   openerScript?: string | null;
 };
 
+type InstanceRow = {
+  botId: string;
+  name: string;
+  owner: string;
+  engine: string;
+  status: string;
+  pid: number | null;
+  processAlive: boolean;
+  startedAt: number | null;
+  heartbeatAgeS: number | null;
+  tickAgeS: number | null;
+  online: boolean;
+  beamStage: string;
+};
+
+type OrphanRow = { pid: number; cmdline: string };
+
+function fmtUptime(startedAt: number | null): string {
+  if (!startedAt) return "—";
+  const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec % 60}s`;
+  return `${sec}s`;
+}
+
 type LicenseKeyInfo = {
   id: string;
   key: string;
@@ -89,7 +116,7 @@ type LicenseInfo = {
 
 export default function AdminPanel({ meId }: { meId: string }) {
   // Sub-sidebar sections — the admin area is too big for one scrolling page.
-  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "testai" | "shop" | "adminbot";
+  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "testai" | "shop" | "adminbot" | "instances";
   const [section, setSection] = useState<AdminSection>("overview");
   // Session ID panel
   type SessionRow = {
@@ -138,6 +165,10 @@ export default function AdminPanel({ meId }: { meId: string }) {
   type AiTestResult = { busy?: boolean; ok?: boolean; reply?: string; error?: string; ms?: number };
   const [aiProviders, setAiProviders] = useState<AiProviderInfo[]>([]);
   const [aiTests, setAiTests] = useState<Record<string, AiTestResult>>({});
+  const [instances, setInstances] = useState<InstanceRow[]>([]);
+  const [orphans, setOrphans] = useState<OrphanRow[]>([]);
+  const [instancesLoaded, setInstancesLoaded] = useState(false);
+  const [instanceBusy, setInstanceBusy] = useState<string | null>(null);
 
   function openConfirm(c: ConfirmState) {
     setConfirmState(c);
@@ -423,6 +454,68 @@ export default function AdminPanel({ meId }: { meId: string }) {
       clearInterval(timer);
     };
   }, [section, loadBotStatus]);
+
+  // Live engine instances on the server (registry + orphaned processes).
+  const loadInstances = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/instances", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setInstances(data.instances ?? []);
+        setOrphans(data.orphans ?? []);
+        setInstancesLoaded(true);
+      }
+    } catch {}
+  }, []);
+
+  // Poll the instance list while the Instances section is open.
+  useEffect(() => {
+    if (section !== "instances") return;
+    const first = setTimeout(() => void loadInstances(), 0);
+    const timer = setInterval(() => void loadInstances(), 10000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [section, loadInstances]);
+
+  async function stopInstance(botId: string) {
+    setInstanceBusy(botId);
+    try {
+      const res = await fetch("/api/admin/instances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) toast(data.message || "Instance stopped.", "success");
+      else toast(data?.error || "Could not stop that instance.", "error");
+    } catch {
+      toast("Could not reach the server.", "error");
+    } finally {
+      setInstanceBusy(null);
+      void loadInstances();
+    }
+  }
+
+  async function forceStopOrphan(pid: number) {
+    setInstanceBusy(`pid-${pid}`);
+    try {
+      const res = await fetch("/api/admin/instances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pid }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) toast(data.message || "Process stopped.", "success");
+      else toast(data?.error || "Could not stop that process.", "error");
+    } catch {
+      toast("Could not reach the server.", "error");
+    } finally {
+      setInstanceBusy(null);
+      void loadInstances();
+    }
+  }
 
   async function startAdminBot() {
     setBotBusy(true);
@@ -1048,6 +1141,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
               { id: "testai", label: "Test AI", icon: <BrainIcon /> },
               { id: "shop", label: "Shop Management", icon: <CartIcon /> },
               { id: "adminbot", label: "Admin Bot", icon: <BotFaceIcon /> },
+              { id: "instances", label: "Instances", icon: <EyeIcon /> },
             ] as { id: AdminSection; label: string; icon: React.ReactNode }[]).map((item) => (
               <button
                 key={item.id}
@@ -1082,6 +1176,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
                   { id: "users", label: "Manage users", sub: "accounts, slots, bots", icon: <UsersIcon /> },
                   { id: "licenses", label: "License keys", sub: "generate, redeem, revoke", icon: <TicketStarIcon /> },
                   { id: "sessions", label: "Session IDs", sub: "every bot's ssid", icon: <KeyIcon /> },
+                  { id: "instances", label: "Instances", sub: "live engine processes", icon: <EyeIcon /> },
                   { id: "shop", label: "Shop management", sub: "plans, LTC, invoices", icon: <CartIcon /> },
                 ] as { id: AdminSection; label: string; sub: string; icon: React.ReactNode }[]).map((c) => (
                   <button
@@ -1930,7 +2025,141 @@ export default function AdminPanel({ meId }: { meId: string }) {
             </div>
           )}
 
-          {section === "shop" && (
+          {section === "instances" && (
+        <div className="animate-fade-in">
+          {/* live instances */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-200">Live bot instances</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Engine processes running on the server right now, mapped to their bots. Updates every 10 seconds.
+                </p>
+              </div>
+              <button
+                onClick={() => void loadInstances()}
+                className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-fuchsia-500/50"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="pb-2 pr-4 font-medium">Bot</th>
+                    <th className="pb-2 pr-4 font-medium">Owner</th>
+                    <th className="pb-2 pr-4 font-medium">Engine</th>
+                    <th className="pb-2 pr-4 font-medium">Status</th>
+                    <th className="pb-2 pr-4 font-medium">PID</th>
+                    <th className="pb-2 pr-4 font-medium">Uptime</th>
+                    <th className="pb-2 pr-4 font-medium">Heartbeat</th>
+                    <th className="pb-2 pr-4 font-medium">Beam</th>
+                    <th className="pb-2 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instances.map((r) => (
+                    <tr key={r.botId} className="border-b border-slate-800/60">
+                      <td className="py-2.5 pr-4 font-medium text-slate-200">{r.name}</td>
+                      <td className="py-2.5 pr-4 text-slate-400">{r.owner}</td>
+                      <td className="py-2.5 pr-4 text-slate-400">
+                        {r.engine === "azalea" ? "Rust engine" : "Node engine"}
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <span className={r.online ? "text-emerald-300" : "text-slate-400"}>
+                          {r.status}
+                          {r.online ? " (in game)" : ""}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4 font-mono text-slate-400">
+                        {r.pid ?? "in-process"}
+                        {r.pid !== null && !r.processAlive ? " (dead)" : ""}
+                      </td>
+                      <td className="py-2.5 pr-4 text-slate-400">{fmtUptime(r.startedAt)}</td>
+                      <td className="py-2.5 pr-4 text-slate-400">
+                        {r.heartbeatAgeS === null ? "—" : `${r.heartbeatAgeS}s ago`}
+                      </td>
+                      <td className="max-w-40 truncate py-2.5 pr-4 text-slate-400">
+                        {r.beamStage || "—"}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          onClick={() => void stopInstance(r.botId)}
+                          disabled={instanceBusy === r.botId || r.status === "offline"}
+                          className="rounded-lg bg-rose-600/80 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          {instanceBusy === r.botId ? "Stopping…" : "Stop"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {instancesLoaded && instances.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="py-6 text-center text-slate-500">
+                        No bot instances are running.
+                      </td>
+                    </tr>
+                  )}
+                  {!instancesLoaded && (
+                    <tr>
+                      <td colSpan={9} className="py-6 text-center text-slate-500">
+                        Loading instances…
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* orphaned processes */}
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+            <h3 className="text-sm font-semibold text-slate-200">Orphaned engine processes</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Engine processes running on the server that no bot in the panel owns — usually left behind by a crash
+              or a deploy. Force stop kills the process directly.
+            </p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="pb-2 pr-4 font-medium">PID</th>
+                    <th className="pb-2 pr-4 font-medium">Process</th>
+                    <th className="pb-2 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orphans.map((o) => (
+                    <tr key={o.pid} className="border-b border-slate-800/60">
+                      <td className="py-2.5 pr-4 font-mono text-slate-200">{o.pid}</td>
+                      <td className="max-w-96 truncate py-2.5 pr-4 font-mono text-slate-500">{o.cmdline}</td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          onClick={() => void forceStopOrphan(o.pid)}
+                          disabled={instanceBusy === `pid-${o.pid}`}
+                          className="rounded-lg bg-rose-600/80 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                        >
+                          {instanceBusy === `pid-${o.pid}` ? "Stopping…" : "Force stop"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {instancesLoaded && orphans.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-6 text-center text-slate-500">
+                        No orphaned processes — clean.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {section === "shop" && (
             <div className="animate-fade-in">
       {/* Shop Management */}
       <div className="mt-10">
