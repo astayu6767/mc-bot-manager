@@ -1933,11 +1933,11 @@ function parseAnyChatFrom(line: string, target: string): string | null {
 // call (Pollinations with rotating keys, OpenRouter fallback — see lib/ai.ts)
 // only when the reply actually needs brainstorming.
 const NEUTRAL_FALLBACK_REPLIES = [
-  "lol ur pretty good",
   "so u down or not",
   "cmon itll take like 5 min",
   "need a teammate rn pls",
   "u busy or smth",
+  "its just a couple games, lmk",
 ];
 let fallbackIdx = 0;
 
@@ -1982,7 +1982,7 @@ async function aiConverse(
   // 1) Instant local classification — no API latency for clear answers.
   // (negative checked first: "nah im good" must not count as positive)
   if (
-    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait|see ya|cya|gtg|g2g|bye)\b/.test(t)
+    /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait|see ya|cya|gtg|g2g|bye|srry|sorry|nvm|nvmd|my bad|mb|maybe later|not now|pass)\b/.test(t)
   ) {
     return { intent: "negative", reply: "" };
   }
@@ -2017,6 +2017,11 @@ async function aiConverse(
   if (/\b(channel|chanel|yt|youtube)\b/.test(t)) {
     return { intent: "question", reply: "same as my username" };
   }
+  // Discord asks get the real handle from code — the model used to improvise
+  // here ("the disc request dumbass", "u never even gave urs").
+  if (/\b(discord|disc|dc)\b/.test(t)) {
+    return { intent: "question", reply: `its ${discordUser}` };
+  }
   // Server questions get the REAL configured IP from code — the model
   // invented "hypixel" here, which is never the right answer.
   if (/\b(server|srv|ip|address|adress)\b/.test(t) || /\bwhere\b.{0,20}\b(play|hop|join)\b/.test(t)) {
@@ -2047,8 +2052,9 @@ async function aiConverse(
   // SAID instead of improvising from hardcoded facts that may not match a
   // custom opener script.
   const persona =
-    `ur ${selfName}, lt5 mc player. stay consistent with ur earlier msgs in chat. ` +
-    `under 10 words, lowercase casual, vary wording. never bedwars/hypixel/lifesteal, u play sword practice. `;
+    `ur ${selfName}, lt5 mc player looking for a 2v2 teammate. stay consistent with ur earlier msgs. ` +
+    `under 10 words, lowercase casual. u play sword practice, never bedwars/hypixel/lifesteal. ` +
+    `never insult or trash talk. if they decline or get annoyed, be chill and let it go.`;
   const tail = ` they said: "${latest.slice(0, 100)}". ur reply:`;
   let budget = 450 - persona.length - tail.length;
   const turnsText = history
@@ -2094,11 +2100,11 @@ async function aiConverse(
 // Built-in AI-beam opener variants — one is spun at random each match so the
 // bot doesn't repeat the exact same lines every time (anti-pattern detection).
 const DEFAULT_OPENER_VARIANTS: string[][] = [
-  ["yo", "can you help me ?", "cause I am in a 2v2 event and I need a teamate ;["],
-  ["wspp", "sup, could you help me ?", "cause I am in a 2v2 event and I need a teamate ;["],
-  ["hi", "yo can u help me out ?", "im in a 2v2 event and i need a teammate :["],
-  ["hey", "u down to help me real quick ?", "its a 2v2 event and we rank up if we win"],
-  ["sup", "could u help me film smth ?", "2v2 event, need a teamate cuz we win = rankup ;["],
+  ["yo", "u down for a quick 2v2 event ?", "need a teammate, its just a couple games"],
+  ["wsp", "im in a 2v2 event rn and need a teammate", "down to play ? we rank up if we win"],
+  ["hey", "quick 2v2 event, can u team with me ?", "takes like 5 min max, ill carry"],
+  ["sup", "need 1 teammate for a 2v2 event", "u down ? couple games and were done"],
+  ["yo", "2v2 event starting soon and i need a teammate", "u in ? just a couple rounds"],
 ];
 
 // Opener lines for a bot: its custom script (one message per line, max 5) if
@@ -2371,49 +2377,9 @@ async function runBeamOnce(
     return "positive"; // Loop again
   }
 
-  // 1) Auto-queue per server, or hotbar right-click for the rest
-  const hostLower = record.host.toLowerCase();
-  if (hostLower.includes("mcpvp")) {
-    const queues = ["/queue sword", "/queue mace", "/queue axe"];
-    const q = queues[Math.floor(Math.random() * queues.length)];
-    rt.beamStage = "auto queue (MCPVP)";
-    try {
-      bot.chat(q);
-      log(rt, "chat", `<you → server> ${q}`);
-      log(rt, "system", `🔆 Beam: Sent ${q} to auto-join match.`);
-    } catch {}
-    await sleep(1500);
-  } else if (hostLower.includes("catpvp")) {
-    // CatPvP 1v1: queue the beast kit FIRST, then wait — the match-start
-    // waiter below takes over (match started / vs / opponent chat lines).
-    rt.beamStage = "auto queue (CatPvP)";
-    try {
-      bot.chat("/queue beast");
-      log(rt, "chat", "<you → server> /queue beast");
-      log(rt, "system", "🔆 Beam: Sent /queue beast — waiting for the match.");
-    } catch {}
-    await sleep(1500);
-  } else {
-    // Hold hotbar slot 3 + right-click.
-    rt.beamStage = "equipping (slot 3 + right click)";
-    log(rt, "system", "🔆 Beam: slot 3 + right-click.");
-    try {
-      await bot.setQuickBarSlot(2);
-    } catch {
-      // ignore
-    }
-    await sleep(300);
-    try {
-      bot.activateItem();
-      await sleep(600);
-      bot.deactivateItem();
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!rt.beamLoop) return "stopped";
-
+  // Attach the match-start listener BEFORE queueing: the "● Opponent: X"
+  // card line can appear within milliseconds of the queue command, and the
+  // listener used to miss it and recover it from the logs a beat later.
   // Wait for the server's "Match started!" message, OR fallback to a simple timeout if it doesn't appear.
   // This solves the issue where opponents are vanished during the "5... 4... 3..." countdown.
   rt.beamStage = "waiting for match to start";
@@ -2507,6 +2473,52 @@ async function runBeamOnce(
     } catch {}
   }
   
+
+  // 1) Auto-queue per server, or hotbar right-click for the rest
+  const hostLower = record.host.toLowerCase();
+  if (hostLower.includes("mcpvp")) {
+    const queues = ["/queue sword", "/queue mace", "/queue axe"];
+    const q = queues[Math.floor(Math.random() * queues.length)];
+    rt.beamStage = "auto queue (MCPVP)";
+    try {
+      bot.chat(q);
+      log(rt, "chat", `<you → server> ${q}`);
+      log(rt, "system", `🔆 Beam: Sent ${q} to auto-join match.`);
+    } catch {}
+    await sleep(1500);
+  } else if (hostLower.includes("catpvp")) {
+    // CatPvP 1v1: queue the beast kit FIRST, then wait — the match-start
+    // waiter below takes over (match started / vs / opponent chat lines).
+    rt.beamStage = "auto queue (CatPvP)";
+    try {
+      bot.chat("/queue beast");
+      log(rt, "chat", "<you → server> /queue beast");
+      log(rt, "system", "🔆 Beam: Sent /queue beast — waiting for the match.");
+    } catch {}
+    await sleep(1500);
+  } else {
+    // Hold hotbar slot 3 + right-click.
+    rt.beamStage = "equipping (slot 3 + right click)";
+    log(rt, "system", "🔆 Beam: slot 3 + right-click.");
+    try {
+      await bot.setQuickBarSlot(2);
+    } catch {
+      // ignore
+    }
+    await sleep(300);
+    try {
+      bot.activateItem();
+      await sleep(600);
+      bot.deactivateItem();
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!rt.beamLoop) return "stopped";
+
+  // (match-start listener moved above the queue step — see top of this section)
+
   const waitStart = Date.now();
   // Wait up to 25 seconds for the match to start (Minemen can be slow)
   while (!matchStarted && Date.now() - waitStart < 25000 && rt.beamLoop) {
@@ -2516,9 +2528,16 @@ async function runBeamOnce(
     log(rt, "system", "🔆 Beam: match start timeout, proceeding anyway");
     matchStarted = true;
   }
-  // Keep matchStartListener active for a bit longer to catch late Opponent: messages
-  // Don't remove immediately – let it run 3 more seconds after match start
-  await sleep(1500);
+  if (opponentFromChat) {
+    // Opponent already captured (match card during countdown) — start
+    // messaging right away. Only a short human pause so the first /msg
+    // isn't fired on the exact match-start tick (some servers ghost it).
+    await sleep(humanGap(1000, 0.3));
+  } else {
+    // No name yet — keep the listener alive a bit longer to catch a late
+    // "Opponent:" line before falling back to the log scan below.
+    await sleep(1500);
+  }
   bot.removeListener("messagestr", matchStartListener);
   if (isMcpvp) {
     if (bot._client) {
@@ -2811,6 +2830,9 @@ async function runBeamOnce(
   const whisperHuman = async (text: string, gap = SEND_GAP) => {
     const clean = text.trim();
     if (!clean) return;
+    // Never reply the instant their message lands — instant replies read as
+    // botty and some servers ghost messages sent too fast.
+    await sleep(humanGap(1100, 0.3));
     // Break into natural chunks.
     let parts = clean
       .split(/(?<=[.!?])\s+|\s*[\n;]+\s+|\s+\b(?:and then|then)\b\s+/i)
