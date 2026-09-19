@@ -1981,7 +1981,30 @@ async function aiConverse(
 
   // 1) Instant local classification — no API latency for clear answers.
   // (negative checked first: "nah im good" must not count as positive)
+
+  // Self-deprecating agreement ("ok but im noob", "sure but im bad") is a
+  // hesitant YES — the negative word is about THEM, not a refusal. It used
+  // to hit the "noob" entry in the negative list and the bot /left on
+  // someone who had just agreed (forfeiting the match on top).
+  const selfDep =
+    /\b(?:im|i'?m|i am)\s+(?:noob|bad|trash|garbage|dogshit|sucks?|new|bot|not (?:that )?(?:good|great))\b/i;
+  const refuseLead =
+    /^(?:no|nah|nope|nty|srry|sorry|nvm|not now|maybe later)\b/i;
+  if (selfDep.test(t) && !refuseLead.test(t)) {
+    if (/\b(?:ok|okay|sure|yea|yeah|yep|ye|alr|alright|down|fine|k|kk|mk|bet)\b/.test(t)) {
+      const carry = [
+        "dont worry ill carry u",
+        "dw i got u, ill carry",
+        "ur fine, ill carry",
+        "dont trip, ill carry",
+      ];
+      return { intent: "positive", reply: carry[Math.floor(Math.random() * carry.length)] };
+    }
+    // bare modesty ("im noob") — no yes/no yet; fall through to the model
+    // instead of counting it as a decline.
+  }
   if (
+    (!selfDep.test(t) || refuseLead.test(t)) &&
     /\b(no|nah|nope|cant|can'?t|busy|stop|leave|go away|stfu|noob|cringe|scam|bot|never|nty|idc|annoying|im good|im gd|i'?m good|not interested|nice try|falling for|ain'?t buying|not buying|yeah right|scammer|bait|see ya|cya|gtg|g2g|bye|srry|sorry|nvm|nvmd|my bad|mb|maybe later|not now|pass)\b/.test(t)
   ) {
     return { intent: "negative", reply: "" };
@@ -3028,6 +3051,8 @@ async function runBeamOnce(
         return "negative";
       }
       if (ai.intent === "positive") {
+        // Reassure first when they agreed shyly ("ok but im noob").
+        if (ai.reply && ai.reply !== "lets go") await whisperHuman(ai.reply);
         return await runClosing();
       }
       // question / neutral → reply in-character (split into human messages).
