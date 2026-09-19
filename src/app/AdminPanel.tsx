@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import BotDetailView from "./BotDetailView";
 import { EditBotModal } from "./BotDashboard";
-import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon, BrainIcon, EyeIcon } from "./Icons";
+import { ChartIcon, UsersIcon, TicketStarIcon, KeyIcon, CartIcon, BotFaceIcon, BrainIcon, EyeIcon, TargetIcon } from "./Icons";
 import { toast } from "./toast";
 import { SkeletonTable } from "./Skeleton";
 import { BotItem } from "./types";
@@ -53,6 +53,7 @@ type AdminBot = {
   spamTriggerWord?: string | null;
   spamReplyMessage?: string | null;
   openerScript?: string | null;
+  lobbyMethods?: string | null;
 };
 
 type InstanceRow = {
@@ -71,6 +72,26 @@ type InstanceRow = {
 };
 
 type OrphanRow = { pid: number; cmdline: string };
+
+type FunnelRowView = {
+  key: string;
+  messaged: number;
+  replied: number;
+  agreed: number;
+  saidSent: number;
+  replyPct: number;
+  agreePct: number;
+  name?: string;
+};
+
+type BeamStatsView = {
+  totals: { messaged: number; replied: number; agreed: number; saidSent: number; skipped: number };
+  servers: FunnelRowView[];
+  bots: FunnelRowView[];
+  methods: FunnelRowView[];
+  daily: { day: string; messaged: number; replied: number; agreed: number }[];
+  contacts: { total: number; agreed: number; declined: number; noreply: number };
+};
 
 function fmtUptime(startedAt: number | null): string {
   if (!startedAt) return "—";
@@ -116,7 +137,7 @@ type LicenseInfo = {
 
 export default function AdminPanel({ meId }: { meId: string }) {
   // Sub-sidebar sections — the admin area is too big for one scrolling page.
-  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "testai" | "shop" | "adminbot" | "instances";
+  type AdminSection = "overview" | "users" | "licenses" | "sessions" | "testai" | "shop" | "adminbot" | "instances" | "beamstats";
   const [section, setSection] = useState<AdminSection>("overview");
   // Session ID panel
   type SessionRow = {
@@ -169,6 +190,8 @@ export default function AdminPanel({ meId }: { meId: string }) {
   const [orphans, setOrphans] = useState<OrphanRow[]>([]);
   const [instancesLoaded, setInstancesLoaded] = useState(false);
   const [instanceBusy, setInstanceBusy] = useState<string | null>(null);
+  const [beamStats, setBeamStats] = useState<BeamStatsView | null>(null);
+  const [beamStatsLoaded, setBeamStatsLoaded] = useState(false);
 
   function openConfirm(c: ConfirmState) {
     setConfirmState(c);
@@ -478,6 +501,21 @@ export default function AdminPanel({ meId }: { meId: string }) {
       clearInterval(timer);
     };
   }, [section, loadInstances]);
+
+  const loadBeamStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/beam-stats", { cache: "no-store" });
+      if (res.ok) setBeamStats(await res.json());
+    } catch {}
+    setBeamStatsLoaded(true);
+  }, []);
+
+  // Refresh beam stats when the section opens (manual refresh button after).
+  useEffect(() => {
+    if (section !== "beamstats") return;
+    const first = setTimeout(() => void loadBeamStats(), 0);
+    return () => clearTimeout(first);
+  }, [section, loadBeamStats]);
 
   async function stopInstance(botId: string) {
     setInstanceBusy(botId);
@@ -1142,6 +1180,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
               { id: "shop", label: "Shop Management", icon: <CartIcon /> },
               { id: "adminbot", label: "Admin Bot", icon: <BotFaceIcon /> },
               { id: "instances", label: "Instances", icon: <EyeIcon /> },
+              { id: "beamstats", label: "Beam Stats", icon: <TargetIcon /> },
             ] as { id: AdminSection; label: string; icon: React.ReactNode }[]).map((item) => (
               <button
                 key={item.id}
@@ -2159,6 +2198,174 @@ export default function AdminPanel({ meId }: { meId: string }) {
         </div>
       )}
 
+      {section === "beamstats" && (
+        <div className="animate-fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-200">Beam funnel — last 7 days</h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Every pitch, reply, agree and discord drop, straight from the bots.
+              </p>
+            </div>
+            <button
+              onClick={() => void loadBeamStats()}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-fuchsia-500/50"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {beamStats && (
+            <>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {[
+                  { label: "Pitched", value: beamStats.totals.messaged },
+                  { label: "Replied", value: `${beamStats.totals.replied} (${beamStats.totals.messaged ? Math.round((beamStats.totals.replied / beamStats.totals.messaged) * 100) : 0}%)` },
+                  { label: "Agreed", value: `${beamStats.totals.agreed} (${beamStats.totals.messaged ? Math.round((beamStats.totals.agreed / beamStats.totals.messaged) * 100) : 0}%)` },
+                  { label: "Said 'sent'", value: beamStats.totals.saidSent },
+                  { label: "Skipped (known)", value: beamStats.totals.skipped },
+                ].map((c) => (
+                  <div key={c.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">{c.label}</p>
+                    <p className="mt-1 text-lg font-bold text-slate-100">{c.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                  <h4 className="text-sm font-semibold text-slate-200">By server</h4>
+                  <table className="mt-3 w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-3 font-medium">Server</th>
+                        <th className="pb-2 pr-3 font-medium">Pitched</th>
+                        <th className="pb-2 pr-3 font-medium">Reply</th>
+                        <th className="pb-2 pr-3 font-medium">Agree</th>
+                        <th className="pb-2 font-medium">Sent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {beamStats.servers.map((r) => (
+                        <tr key={r.key} className="border-b border-slate-800/60">
+                          <td className="max-w-44 truncate py-2 pr-3 font-medium text-slate-200">{r.key}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.messaged}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.replied} ({r.replyPct}%)</td>
+                          <td className="py-2 pr-3 text-emerald-300">{r.agreed} ({r.agreePct}%)</td>
+                          <td className="py-2 text-slate-400">{r.saidSent}</td>
+                        </tr>
+                      ))}
+                      {beamStats.servers.length === 0 && (
+                        <tr><td colSpan={5} className="py-5 text-center text-slate-500">No pitches recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                  <h4 className="text-sm font-semibold text-slate-200">By bot</h4>
+                  <table className="mt-3 w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-3 font-medium">Bot</th>
+                        <th className="pb-2 pr-3 font-medium">Pitched</th>
+                        <th className="pb-2 pr-3 font-medium">Reply</th>
+                        <th className="pb-2 pr-3 font-medium">Agree</th>
+                        <th className="pb-2 font-medium">Sent</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {beamStats.bots.map((r) => (
+                        <tr key={r.key} className="border-b border-slate-800/60">
+                          <td className="max-w-44 truncate py-2 pr-3 font-medium text-slate-200">{r.name || r.key}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.messaged}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.replied} ({r.replyPct}%)</td>
+                          <td className="py-2 pr-3 text-emerald-300">{r.agreed} ({r.agreePct}%)</td>
+                          <td className="py-2 text-slate-400">{r.saidSent}</td>
+                        </tr>
+                      ))}
+                      {beamStats.bots.length === 0 && (
+                        <tr><td colSpan={5} className="py-5 text-center text-slate-500">No pitches recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                  <h4 className="text-sm font-semibold text-slate-200">By method</h4>
+                  <table className="mt-3 w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-3 font-medium">Method</th>
+                        <th className="pb-2 pr-3 font-medium">Pitched</th>
+                        <th className="pb-2 pr-3 font-medium">Reply</th>
+                        <th className="pb-2 font-medium">Agree</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {beamStats.methods.map((r) => (
+                        <tr key={r.key} className="border-b border-slate-800/60">
+                          <td className="py-2 pr-3 font-medium text-slate-200">{r.key}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.messaged}</td>
+                          <td className="py-2 pr-3 text-slate-400">{r.replied} ({r.replyPct}%)</td>
+                          <td className="py-2 text-emerald-300">{r.agreed} ({r.agreePct}%)</td>
+                        </tr>
+                      ))}
+                      {beamStats.methods.length === 0 && (
+                        <tr><td colSpan={4} className="py-5 text-center text-slate-500">No pitches recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    Method is the opener source for now — custom scripts vs built-in defaults. Rotating pitch methods arrive with the multi-method build.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                  <h4 className="text-sm font-semibold text-slate-200">Daily</h4>
+                  <table className="mt-3 w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="pb-2 pr-3 font-medium">Day</th>
+                        <th className="pb-2 pr-3 font-medium">Pitched</th>
+                        <th className="pb-2 pr-3 font-medium">Replied</th>
+                        <th className="pb-2 font-medium">Agreed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {beamStats.daily.map((d) => (
+                        <tr key={d.day} className="border-b border-slate-800/60">
+                          <td className="py-2 pr-3 font-mono text-slate-300">{d.day}</td>
+                          <td className="py-2 pr-3 text-slate-400">{d.messaged}</td>
+                          <td className="py-2 pr-3 text-slate-400">{d.replied}</td>
+                          <td className="py-2 text-emerald-300">{d.agreed}</td>
+                        </tr>
+                      ))}
+                      {beamStats.daily.length === 0 && (
+                        <tr><td colSpan={4} className="py-5 text-center text-slate-500">Nothing recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    Contact memory: {beamStats.contacts.total} players tracked · {beamStats.contacts.agreed} converted · {beamStats.contacts.declined} declined · {beamStats.contacts.noreply} never replied.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+          {!beamStats && beamStatsLoaded && (
+            <p className="mt-6 rounded-xl bg-rose-500/10 px-4 py-3 text-xs text-rose-300 ring-1 ring-rose-500/20">
+              Could not load beam stats.
+            </p>
+          )}
+          {!beamStatsLoaded && (
+            <p className="mt-6 text-center text-xs text-slate-500">Loading…</p>
+          )}
+        </div>
+      )}
+
       {section === "shop" && (
             <div className="animate-fade-in">
       {/* Shop Management */}
@@ -2733,6 +2940,7 @@ export default function AdminPanel({ meId }: { meId: string }) {
         <EditBotModal
           bot={manageBot as unknown as BotItem}
           canEditEngine
+          isAdmin
           onClose={() => setManageBot(null)}
           onSaved={() => {
             setManageBot(null);

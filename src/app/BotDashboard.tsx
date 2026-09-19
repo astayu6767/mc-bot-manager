@@ -866,11 +866,13 @@ export function EditBotModal({
   onClose,
   onSaved,
   canEditEngine = false,
+  isAdmin = false,
 }: {
   bot: BotItem;
   onClose: () => void;
   onSaved: () => void;
   canEditEngine?: boolean;
+  isAdmin?: boolean;
 }) {
   const [token, setToken] = useState("");
   const [engine, setEngine] = useState(bot.engine || "azalea");
@@ -887,6 +889,14 @@ export function EditBotModal({
   const [spamReplyMessage, setSpamReplyMessage] = useState(bot.spamReplyMessage || "add my discord stood014 to join");
   const [openerScript, setOpenerScript] = useState(bot.openerScript || "");
   const [closingScript, setClosingScript] = useState(bot.closingScript || "");
+  const [lobbyMethods, setLobbyMethods] = useState(() => {
+    try {
+      const arr = JSON.parse(bot.lobbyMethods || "[]");
+      return Array.isArray(arr) ? arr.join("\n") : "";
+    } catch {
+      return "";
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -908,6 +918,7 @@ export function EditBotModal({
       spamReplyMessage?: string;
       openerScript?: string;
       closingScript?: string;
+      lobbyMethods?: string;
     } = {};
     if (token.trim()) payload.token = token.trim();
     if (engine !== bot.engine) payload.engine = engine;
@@ -932,6 +943,16 @@ export function EditBotModal({
       payload.openerScript = openerScript.trim();
     if (closingScript.trim() !== (bot.closingScript || ""))
       payload.closingScript = closingScript.trim();
+    if (isAdmin) {
+      const methodLines = lobbyMethods
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(0, 10);
+      if (JSON.stringify(methodLines) !== (bot.lobbyMethods || "[]")) {
+        payload.lobbyMethods = JSON.stringify(methodLines);
+      }
+    }
       
     if (Object.keys(payload).length === 0) {
       setError("Change a field to save.");
@@ -1140,6 +1161,20 @@ export function EditBotModal({
                       className={inputClass}
                     />
                   </Field>
+                  {beamType === "lobby" && isAdmin && (
+                    <Field
+                      label="Lobby Methods (rotation)"
+                      hint="One rotating message per line, up to 10. When nobody says the trigger word for ~10 minutes the bot switches to the next line. Empty = only the single Lobby Message above. Admin only."
+                    >
+                      <textarea
+                        value={lobbyMethods}
+                        onChange={(e) => setLobbyMethods(e.target.value)}
+                        rows={4}
+                        placeholder={"2v2 event need 1 more player, msg me\ntier test all mode, type 123\nlooking for teammate for event rn"}
+                        className={inputClass + " resize-y font-mono text-xs"}
+                      />
+                    </Field>
+                  )}
                   <Field label="Send Interval (ms)" hint="How often to send the message. E.g., 60000 = 1 minute.">
                     <input
                       type="number"
