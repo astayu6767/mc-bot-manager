@@ -12,7 +12,7 @@ use std::{
     net::ToSocketAddrs,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
         Arc,
     },
 };
@@ -61,6 +61,20 @@ fn parse_uuid(raw: &str) -> eyre::Result<Uuid> {
     Ok(Uuid::parse_str(raw.trim())?)
 }
 
+// Mojang session-server cooldown: their API rate-limits (and hard-blocks)
+// IPs that retry too often, answering with an empty body that fails JSON
+// decoding. Track consecutive HTTP-level auth failures and back off
+// exponentially so one bad shared egress IP doesn't get hammered deeper.
+static AUTH_FAILS: AtomicU64 = AtomicU64::new(0);
+static AUTH_NEXT_ALLOWED_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[derive(Debug)]
 struct TokenAccount {
     username: String,
@@ -94,6 +108,23 @@ impl AccountTrait for TokenAccount {
     ) -> Pin<Box<dyn Future<Output = Result<(), ClientSessionServerError>> + Send + 'a>> {
         Box::pin(async move {
             let access_token = self.access_token.lock().clone();
+
+            // Respect the cooldown from previous failures before touching
+            // Mojang again (their rate limit punishes eager retries).
+            let wait_ms = AUTH_NEXT_ALLOWED_MS
+                .load(AtomicOrdering::Relaxed)
+                .saturating_sub(now_ms());
+            if wait_ms > 2000 {
+                log_line(
+                    "system",
+                    format!(
+                        "Mojang auth cooldown — waiting {}s before the next attempt.",
+                        (wait_ms + 999) / 1000
+                    ),
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+            }
+
             let result = session_join(SessionServerJoinOpts {
                 access_token: &access_token,
                 public_key,
@@ -104,7 +135,7 @@ impl AccountTrait for TokenAccount {
             })
             .await;
 
-            match result {
+            let result = match result {
                 Ok(()) => Ok(()),
                 // A broken or hijacked SOCKS5 proxy can kill the HTTPS auth
                 // call (expired MITM certificate, reset mid-handshake...).
@@ -129,6 +160,33 @@ impl AccountTrait for TokenAccount {
                     .await
                 }
                 Err(err) => Err(err),
+            };
+
+            match result {
+                Ok(()) => {
+                    AUTH_FAILS.store(0, AtomicOrdering::Relaxed);
+                    AUTH_NEXT_ALLOWED_MS.store(0, AtomicOrdering::Relaxed);
+                    Ok(())
+                }
+                Err(err) => {
+                    // Only HTTP-level failures (empty/throttled responses,
+                    // network) get the backoff — bans and invalid sessions
+                    // won't heal by waiting.
+                    if matches!(&err, ClientSessionServerError::HttpError(_)) {
+                        let fails = AUTH_FAILS.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+                        let backoff = (30_000u64 << (fails - 1).min(5)).min(600_000);
+                        AUTH_NEXT_ALLOWED_MS
+                            .store(now_ms() + backoff, AtomicOrdering::Relaxed);
+                        log_line(
+                            "system",
+                            format!(
+                                "Mojang auth failed {fails}x in a row — backing off {}s. If this keeps happening the server's IP is rate-limited; a proxy fixes it.",
+                                backoff / 1000
+                            ),
+                        );
+                    }
+                    Err(err)
+                }
             }
         })
     }
