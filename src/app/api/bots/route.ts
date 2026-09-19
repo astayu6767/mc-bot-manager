@@ -44,6 +44,7 @@ export async function GET() {
       spamReplyMessage: b.spamReplyMessage,
       openerScript: b.openerScript,
       closingScript: b.closingScript,
+      lobbyMethods: b.lobbyMethods,
       status: rt.status,
       joined: rt.joined,
       lastError: rt.lastError ?? b.lastError,
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
     spamReplyMessage?: string;
     openerScript?: string;
     closingScript?: string;
+    lobbyMethods?: unknown;
   };
   try {
     body = await req.json();
@@ -151,6 +153,25 @@ export async function POST(req: Request) {
   const spamReplyMessage = (body.spamReplyMessage ?? "").trim() || "add my discord stood014 to join";
   const openerScript = (body.openerScript ?? "").trim();
   const closingScript = (body.closingScript ?? "").trim().slice(0, 500);
+  // Rotating lobby methods are admin-only for now; silently ignored for
+  // normal users (the field isn't shown in their UI).
+  let lobbyMethods = "";
+  if (user.role === "admin" && body.lobbyMethods !== undefined) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let arr: any = body.lobbyMethods;
+    if (typeof arr === "string") {
+      try {
+        arr = JSON.parse(arr);
+      } catch {
+        arr = arr.split("\n");
+      }
+    }
+    if (Array.isArray(arr)) {
+      lobbyMethods = JSON.stringify(
+        arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 10).map((x) => x.slice(0, 200)),
+      );
+    }
+  }
 
   const [inserted] = await db
     .insert(bots)
@@ -173,6 +194,7 @@ export async function POST(req: Request) {
       spamReplyMessage,
       openerScript,
       closingScript,
+      lobbyMethods,
       status: "connecting",
       enabled: "true",
     })

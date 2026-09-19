@@ -4,6 +4,7 @@ import { bots, type Bot } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { startAzaleaBot, type AzaleaRuntime } from "@/lib/azaleaEngine";
 import { aiText, lastAiError } from "@/lib/ai";
+import { shouldSkipTarget, upsertContact, recordAttempt } from "./beamContacts";
 import { isAiModeEnabled, isMaintenanceOn } from "@/lib/maintenance";
 import { isUserBanned } from "@/lib/userBans";
 
@@ -2233,6 +2234,27 @@ async function runBeamOnce(
       "i",
     );
 
+    // Admin-only rotating methods: the bot switches to the next lobby
+    // message when nobody has said the trigger word for a while.
+    let lobbyMethodList: string[] = [];
+    try {
+      const parsed = JSON.parse(record.lobbyMethods || "[]");
+      if (Array.isArray(parsed)) {
+        lobbyMethodList = parsed
+          .map((x: unknown) => String(x).trim())
+          .filter((x: string) => x.length > 0)
+          .slice(0, 10);
+      }
+    } catch {
+      lobbyMethodList = [];
+    }
+    let methodIdx = 0;
+    let lastBiteAt = Date.now();
+    const ROTATE_AFTER_MS = 10 * 60 * 1000;
+    if (lobbyMethodList.length > 1) {
+      log(rt, "system", `🔆 Lobby: ${lobbyMethodList.length} rotating methods active (switch after ${Math.round(ROTATE_AFTER_MS / 60000)} min without a bite).`);
+    }
+
     const replied = new Map<string, number>(); // lowercase name → last queued ts
     // EVERY player who says the trigger word gets queued and whispered ~10s
     // later — nobody is dropped, even if several say it in the same second.
@@ -2294,6 +2316,7 @@ async function runBeamOnce(
         if (now - (replied.get(lc) ?? 0) < 15 * 60 * 1000) return;
         if (pending.some((e) => e.sender.toLowerCase() === lc)) return;
         replied.set(lc, now);
+        lastBiteAt = now; // someone bit — keep the current method
         // …queued for a whisper 10s later (feels human, beats spam filters).
         pending.push({ sender, dueAt: now + 10000 });
         log(rt, "system", `🔆 Lobby: ${sender} said "${triggerWord}" → whisper in 10s.`);
@@ -2309,7 +2332,13 @@ async function runBeamOnce(
     try {
       while (rt.beamLoop) {
         if (!rt.bot || rt.status !== "online") break; // outer loop waits for reconnect
-        sendBotChat(rt, varyAdMessage(lobbyMsg)); // unique every send — no ghost mutes
+        const baseMsg = lobbyMethodList.length ? lobbyMethodList[methodIdx % lobbyMethodList.length] : lobbyMsg;
+        sendBotChat(rt, varyAdMessage(baseMsg)); // unique every send — no ghost mutes
+        if (lobbyMethodList.length > 1 && Date.now() - lastBiteAt > ROTATE_AFTER_MS) {
+          methodIdx++;
+          lastBiteAt = Date.now();
+          log(rt, "system", `🔆 Lobby: no bites — switching to method ${(methodIdx % lobbyMethodList.length) + 1}/${lobbyMethodList.length}: "${lobbyMethodList[methodIdx % lobbyMethodList.length].slice(0, 60)}"`);
+        }
         const start = Date.now();
         while (Date.now() - start < interval && rt.beamLoop) {
           await sleep(1000);
@@ -2641,6 +2670,28 @@ async function runBeamOnce(
   }
   log(rt, "system", `🔆 Beam: target → ${target}.`);
 
+  // ---- Contact memory: never pitch the same player twice ----
+  const methodTag = (record.openerScript || "").trim() ? "custom" : "default";
+  const known = await shouldSkipTarget(target, record.host);
+  if (known.skip) {
+    log(rt, "system", `🔆 Beam: ${target} already contacted (${known.reason}) — skipping, /leave.`);
+    void recordAttempt({ botId: record.id, host: record.host, username: target, method: methodTag, stage: "skipped_known", note: known.reason }).catch(() => {});
+    try {
+      sendBotChat(rt, "/leave");
+    } catch {
+      // ignore
+    }
+    return "negative";
+  }
+  // Funnel recorder for this match — one row per stage, in order:
+  // messaged → replied → agreed → discord_dropped → said_sent, plus terminals.
+  const stagesSeen = new Set<string>();
+  const markStage = (stage: string, note = "") => {
+    if (stagesSeen.has(stage)) return;
+    stagesSeen.add(stage);
+    void recordAttempt({ botId: record.id, host: record.host, username: target, method: methodTag, stage, note }).catch(() => {});
+  };
+
   // Death detection.
   let died = false;
   const onDeath = () => {
@@ -2899,6 +2950,18 @@ async function runBeamOnce(
 
     const doLeave = (why: string) => {
       log(rt, "system", `🔆 Beam: ${why} → /leave.`);
+      // Funnel terminals (agreed is never downgraded inside upsertContact).
+      if (why.includes("declin")) {
+        markStage("declined", why);
+        void upsertContact({ username: target, host: record.host, outcome: "declined", method: methodTag, botId: record.id }).catch(() => {});
+      } else if (why.includes("no reply")) {
+        markStage("no_reply");
+        void upsertContact({ username: target, host: record.host, outcome: "noreply", method: methodTag, botId: record.id }).catch(() => {});
+      } else if (why.includes("left")) {
+        markStage("target_left");
+      } else if (why.toLowerCase().includes("gave ip")) {
+        markStage("gave_ip");
+      }
       try {
         sendBotChat(rt, "/leave");
       } catch {
@@ -2928,6 +2991,7 @@ async function runBeamOnce(
         if (ci < closingLines.length - 1) await sleep(humanGap(1900, 0.25));
       }
       log(rt, "system", "🔆 Beam: discord drop sent.");
+      markStage("discord_dropped");
 
       let gaveIp = false;
 
@@ -2957,6 +3021,7 @@ async function runBeamOnce(
         }
         history.push({ who: "them", text: r });
         log(rt, "system", `🔆 Beam: ${target} said "${r.slice(0, 60)}"`);
+        markStage("replied");
 
         const lr = r.toLowerCase();
         
@@ -2970,6 +3035,7 @@ async function runBeamOnce(
         // Did they say they sent the request?
         const sent = /\b(sent|added|added you|add(ed)? u|joined|joining|im in|i'?m in|ready|added ya|friended|on it|coming)\b/.test(lr);
         if (sent) {
+          markStage("said_sent");
           // Send to AI so it replies naturally (e.g. "alright one sec please").
           const aiSent = await aiConverse(rt, channel, self, history, r, safeIp, discordUser);
           if (aiSent.reply) {
@@ -3042,6 +3108,8 @@ async function runBeamOnce(
       }
       history.push({ who: "them", text: reply });
       log(rt, "system", `🔆 Beam: ${target} said "${reply.slice(0, 60)}"`);
+      markStage("replied");
+      void upsertContact({ username: target, host: record.host, outcome: "replied", method: methodTag, botId: record.id }).catch(() => {});
 
       const ai = await aiConverse(rt, channel, self, history, reply, serverIp, discordUser);
       log(rt, "system", `🔆 Beam: intent=${ai.intent.toUpperCase()}.`);
@@ -3051,6 +3119,8 @@ async function runBeamOnce(
         return "negative";
       }
       if (ai.intent === "positive") {
+        markStage("agreed");
+        void upsertContact({ username: target, host: record.host, outcome: "agreed", method: methodTag, botId: record.id }).catch(() => {});
         // Reassure first when they agreed shyly ("ok but im noob").
         if (ai.reply && ai.reply !== "lets go") await whisperHuman(ai.reply);
         return await runClosing();
@@ -3083,6 +3153,8 @@ async function runBeamOnce(
     // built-in variant, so every match doesn't read identical in chat logs.
     const openerLines = getOpenerLines(record);
     log(rt, "system", `🔆 Beam: opener (${openerLines.length} line${openerLines.length === 1 ? "" : "s"}): ${openerLines.map((l) => `"${l.slice(0, 30)}"`).join(" ")}`);
+    markStage("messaged");
+    void upsertContact({ username: target, host: record.host, outcome: "messaged", method: methodTag, botId: record.id }).catch(() => {});
 
     rt.beamStage = `messaging ${target}`;
 

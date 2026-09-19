@@ -79,6 +79,7 @@ export async function PATCH(
     spamReplyMessage?: string;
     openerScript?: string;
     closingScript?: string;
+    lobbyMethods?: unknown;
   };
   try {
     body = await req.json();
@@ -137,6 +138,25 @@ export async function PATCH(
   if (typeof body.spamReplyMessage === "string") updates.spamReplyMessage = body.spamReplyMessage;
   if (typeof body.openerScript === "string") updates.openerScript = body.openerScript.trim();
   if (typeof body.closingScript === "string") updates.closingScript = body.closingScript.trim().slice(0, 500);
+  if (body.lobbyMethods !== undefined) {
+    if (auth.user?.role !== "admin") {
+      return Response.json({ error: "Only admins can set rotating methods." }, { status: 403 });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let arr: any = body.lobbyMethods;
+    if (typeof arr === "string") {
+      try {
+        arr = JSON.parse(arr);
+      } catch {
+        arr = arr.split("\n");
+      }
+    }
+    if (Array.isArray(arr)) {
+      updates.lobbyMethods = JSON.stringify(
+        arr.map((x) => String(x).trim()).filter(Boolean).slice(0, 10).map((x) => x.slice(0, 200)),
+      );
+    }
+  }
 
   // Change the target server (host, with optional "host:port", or explicit port).
   if (typeof body.host === "string" && body.host.trim()) {

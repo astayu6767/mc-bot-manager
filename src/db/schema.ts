@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, uuid, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, uuid, doublePrecision, serial, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -137,6 +137,9 @@ export const bots = pgTable("bots", {
   // Closing (discord drop) messages for the 1v1 method — one per line,
   // {discord}/{ip} placeholders; empty = built-in default
   closingScript: text("closing_script").notNull().default(""),
+  // Rotating lobby messages for the adbot (JSON array of strings). Admin-only
+  // feature — the bot switches to the next message when nobody bites.
+  lobbyMethods: text("lobby_methods").notNull().default(""),
   // Last known status: offline | connecting | online | error
   status: text("status").notNull().default("offline"),
   lastError: text("last_error"),
@@ -226,3 +229,38 @@ export type ShopPlan = typeof shopPlans.$inferSelect;
 export type NewShopPlan = typeof shopPlans.$inferInsert;
 export type Invoice = typeof invoices.$inferSelect;
 export type NewInvoice = typeof invoices.$inferInsert;
+
+// Beam contact memory — every player any bot has pitched, per server, with the
+// last outcome. Powers the "already talked to this player" skip so bots never
+// re-message someone who declined/agreed/ignored them before.
+export const beamContacts = pgTable(
+  "beam_contacts",
+  {
+    id: serial("id").primaryKey(),
+    // always stored lowercase
+    username: text("username").notNull(),
+    host: text("host").notNull(),
+    // messaged | replied | agreed | declined | noreply
+    outcome: text("outcome").notNull().default("messaged"),
+    attempts: integer("attempts").notNull().default(1),
+    method: text("method").notNull().default(""),
+    botId: text("bot_id").notNull().default(""),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("beam_contacts_username_host_idx").on(t.username, t.host)],
+);
+
+// Beam funnel events — one row per stage reached in a match interaction.
+// Stages: messaged → replied → agreed → discord_dropped → said_sent,
+// plus terminals declined / no_reply / target_left / gave_ip / skipped_known.
+export const beamAttempts = pgTable("beam_attempts", {
+  id: serial("id").primaryKey(),
+  botId: text("bot_id").notNull().default(""),
+  host: text("host").notNull().default(""),
+  username: text("username").notNull().default(""),
+  method: text("method").notNull().default(""),
+  stage: text("stage").notNull(),
+  note: text("note").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

@@ -41,6 +41,7 @@ export async function GET(
       spamTriggerWord: b.spamTriggerWord,
       spamReplyMessage: b.spamReplyMessage,
       openerScript: b.openerScript,
+      lobbyMethods: b.lobbyMethods,
       status: rt.status,
     };
   });
